@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from typing import Dict, Any
 import httpx
@@ -67,27 +68,45 @@ class XAIClient:
         try:
             logger.info("Gathering web search context from Grok for: '%s'...", question)
 
-            response = httpx.post(
-                f"{self.base_url}/responses",
-                headers={
-                    "Authorization": f"Bearer {settings.XAI_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model,
-                    "input": [
-                        {
-                            "role": "system",
-                            "content": CONTEXT_GATHERER_SYSTEM_PROMPT,
+            response = None
+            last_error = None
+            for attempt in range(2):
+                try:
+                    response = httpx.post(
+                        f"{self.base_url}/responses",
+                        headers={
+                            "Authorization": f"Bearer {settings.XAI_API_KEY}",
+                            "Content-Type": "application/json",
                         },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "tools": [{"type": "web_search"}],
-                    "store": False,
-                },
-                timeout=45.0,
-            )
-            response.raise_for_status()
+                        json={
+                            "model": self.model,
+                            "input": [
+                                {
+                                    "role": "system",
+                                    "content": CONTEXT_GATHERER_SYSTEM_PROMPT,
+                                },
+                                {"role": "user", "content": prompt},
+                            ],
+                            "tools": [{"type": "web_search"}],
+                            "store": False,
+                        },
+                        timeout=75.0,
+                    )
+                    response.raise_for_status()
+                    break
+                except (httpx.TimeoutException, httpx.TransportError) as exc:
+                    last_error = exc
+                    logger.warning(
+                        "Grok context attempt %s failed for '%s': %s",
+                        attempt + 1,
+                        question,
+                        exc,
+                    )
+                    if attempt == 0:
+                        time.sleep(2)
+
+            if response is None:
+                raise RuntimeError(f"Grok context request failed after retries: {last_error}")
             content, clean_citations = self._extract_response_text_and_citations(response.json())
 
             if not content:
@@ -117,15 +136,33 @@ class XAIClient:
         try:
             logger.info(f"Estimating probability from Grok for: '{question}'...")
             
-            # Call Grok with JSON response format
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": PROBABILITY_ENGINE_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
-                response_format={"type": "json_object"}
-            )
+            response = None
+            last_error = None
+            for attempt in range(2):
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": PROBABILITY_ENGINE_SYSTEM_PROMPT},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        response_format={"type": "json_object"},
+                        timeout=75.0,
+                    )
+                    break
+                except (httpx.TimeoutException, httpx.TransportError) as exc:
+                    last_error = exc
+                    logger.warning(
+                        "Grok probability attempt %s failed for '%s': %s",
+                        attempt + 1,
+                        question,
+                        exc,
+                    )
+                    if attempt == 0:
+                        time.sleep(2)
+
+            if response is None:
+                raise RuntimeError(f"Grok probability request failed after retries: {last_error}")
 
             raw_content = response.choices[0].message.content or ""
             

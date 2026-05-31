@@ -1,6 +1,7 @@
 import httpx
 import json
 import logging
+import time
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 from app.config import settings
@@ -30,8 +31,25 @@ class PolymarketClient:
 
         try:
             logger.info("Fetching active markets from Polymarket Gamma API...")
-            response = httpx.get(url, params=params, timeout=15.0)
-            response.raise_for_status()
+            response = None
+            last_error = None
+            for attempt in range(3):
+                try:
+                    response = httpx.get(url, params=params, timeout=30.0)
+                    response.raise_for_status()
+                    break
+                except (httpx.TimeoutException, httpx.TransportError) as exc:
+                    last_error = exc
+                    logger.warning(
+                        "Polymarket fetch attempt %s failed: %s",
+                        attempt + 1,
+                        exc,
+                    )
+                    if attempt < 2:
+                        time.sleep(2 ** attempt)
+
+            if response is None:
+                raise RuntimeError(f"Polymarket fetch failed after retries: {last_error}")
             raw_markets = response.json()
             logger.info(f"Fetched {len(raw_markets)} raw markets. Filtering...")
 
@@ -124,7 +142,11 @@ class PolymarketClient:
             
             # Sort by volume descending and take up to the configured limit
             filtered_markets.sort(key=lambda x: x["volume"], reverse=True)
-            return filtered_markets[:settings.MAX_CANDIDATES_PER_RUN]
+            candidate_limit = min(
+                settings.DEFAULT_CANDIDATES_PER_RUN,
+                settings.MAX_CANDIDATES_PER_RUN,
+            )
+            return filtered_markets[:candidate_limit]
 
         except Exception as e:
             logger.error(f"Error fetching markets from Polymarket: {e}")

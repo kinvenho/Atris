@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     MIN_LIQUIDITY: float = 5000.0
     MIN_HOURS_TO_CLOSE: int = 48
     MAX_CANDIDATES_PER_RUN: int = 10
+    DEFAULT_CANDIDATES_PER_RUN: int = 7
     MIN_EDGE_TO_PUBLISH: float = 0.08
     MIN_CONFIDENCE_TO_PUBLISH: float = 0.60
     PIPELINE_CADENCE_MINUTES: int = 45
