@@ -1,3 +1,11 @@
+```txt
+    _  _____ ____  ___ ____
+   / \|_   _|  _ \|_ _/ ___|
+  / _ \ | | | |_) || |\___ \
+ / ___ \| | |  _ < | | ___) |
+/_/   \_\_| |_| \_\___|____/
+```
+
 # Atris
 
 Atris is an autonomous market-research backend for Polymarket. It scans active binary markets, gathers current context with Grok web search, estimates Atris' probability of resolution, publishes recommendations when the edge clears configured thresholds, and tracks outcomes over time.
@@ -6,13 +14,7 @@ The first production version is intentionally narrow: no accounts, no alerts, no
 
 ## Status
 
-Atris V1 backend is deployed on Railway and writes to Supabase.
-
-Current production API:
-
-```txt
-https://atris-production.up.railway.app
-```
+Atris V1 backend is deployed on Railway in the reference deployment and writes to Supabase.
 
 Recent production runner jobs have completed successfully with:
 
@@ -102,7 +104,7 @@ POST /agent/trigger
 Dry-run example:
 
 ```bash
-curl -X POST "https://atris-production.up.railway.app/agent/trigger?dry_run=true" \
+curl -X POST "$ATRIS_API_URL/agent/trigger?dry_run=true" \
   -H "x-atris-admin-token: $AGENT_ADMIN_TOKEN"
 ```
 
