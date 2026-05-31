@@ -1,6 +1,6 @@
 # Railway Backend Setup
 
-Create a Railway service from the GitHub repo and set the service root directory to:
+Preferred setup: create a Railway service from the GitHub repo and set the service root directory to:
 
 ```txt
 /backend
@@ -17,6 +17,8 @@ Railway should then start FastAPI with:
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
+
+Fallback setup: if Railway is pointed at the repository root, the root `railway.json`, `requirements.txt`, `Procfile`, `runtime.txt`, and `start.sh` files proxy the deploy into `/backend`.
 
 Required environment variables:
 
