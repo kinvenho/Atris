@@ -58,6 +58,67 @@ class XAIClient:
 
         return content, clean_citations[:15]
 
+    def _extract_chat_text_and_citations(self, payload: Dict[str, Any]) -> tuple[str, list[str]]:
+        text_parts: list[str] = []
+        citations: list[str] = []
+
+        for choice in payload.get("choices", []) or []:
+            message = choice.get("message") or {}
+            content = message.get("content")
+            if isinstance(content, str) and content.strip():
+                text_parts.append(content)
+            elif isinstance(content, list):
+                for part in content:
+                    part_text = part.get("text") if isinstance(part, dict) else None
+                    if isinstance(part_text, str) and part_text.strip():
+                        text_parts.append(part_text)
+
+        for citation in payload.get("citations", []) or []:
+            if isinstance(citation, str) and citation.startswith(("http://", "https://")):
+                citations.append(citation)
+
+        content = "\n\n".join(dict.fromkeys(text_parts)).strip()
+        regex_urls = re.findall(r'https?://[^\s\)\]\},"\']+', content)
+        citations.extend(regex_urls)
+
+        clean_citations = []
+        for url in citations:
+            clean_url = re.sub(r'[.,;\)"\']$', "", url)
+            if clean_url and clean_url not in clean_citations:
+                clean_citations.append(clean_url)
+
+        return content, clean_citations[:15]
+
+    def _post_with_retries(self, endpoint: str, body: Dict[str, Any], question: str) -> httpx.Response:
+        response = None
+        last_error = None
+
+        for attempt in range(2):
+            try:
+                response = httpx.post(
+                    f"{self.base_url}/{endpoint.lstrip('/')}",
+                    headers={
+                        "Authorization": f"Bearer {settings.XAI_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json=body,
+                    timeout=75.0,
+                )
+                return response
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                last_error = exc
+                logger.warning(
+                    "Grok context %s attempt %s failed for '%s': %s",
+                    endpoint,
+                    attempt + 1,
+                    question,
+                    exc,
+                )
+                if attempt == 0:
+                    time.sleep(2)
+
+        raise RuntimeError(f"Grok context request failed after retries: {last_error}")
+
     def gather_context_with_search(self, question: str, description: str) -> Dict[str, Any]:
         """
         Uses Grok's native web search to gather context on the market question.
@@ -74,52 +135,52 @@ class XAIClient:
         try:
             logger.info("Gathering web search context from Grok for: '%s'...", question)
 
-            response = None
-            last_error = None
-            for attempt in range(2):
-                try:
-                    response = httpx.post(
-                        f"{self.base_url}/responses",
-                        headers={
-                            "Authorization": f"Bearer {settings.XAI_API_KEY}",
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "model": self.search_model,
-                            "input": [
-                                {
-                                    "role": "system",
-                                    "content": CONTEXT_GATHERER_SYSTEM_PROMPT,
-                                },
-                                {"role": "user", "content": prompt},
-                            ],
-                            "tools": [{"type": "web_search"}],
-                            "store": False,
-                        },
-                        timeout=75.0,
-                    )
-                    if response.status_code in {401, 403}:
-                        raise XAIAuthenticationError(
-                            "xAI rejected the context request. Check XAI_API_KEY, model access, "
-                            "and whether this account can use the Responses API with web search. "
-                            f"Configured search model: {self.search_model}."
-                        )
-                    response.raise_for_status()
-                    break
-                except (httpx.TimeoutException, httpx.TransportError) as exc:
-                    last_error = exc
-                    logger.warning(
-                        "Grok context attempt %s failed for '%s': %s",
-                        attempt + 1,
-                        question,
-                        exc,
-                    )
-                    if attempt == 0:
-                        time.sleep(2)
+            chat_response = self._post_with_retries(
+                "chat/completions",
+                {
+                    "model": self.search_model,
+                    "messages": [
+                        {"role": "system", "content": CONTEXT_GATHERER_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "search_parameters": {
+                        "mode": "auto",
+                        "return_citations": True,
+                        "max_search_results": 10,
+                    },
+                },
+                question,
+            )
 
-            if response is None:
-                raise RuntimeError(f"Grok context request failed after retries: {last_error}")
-            content, clean_citations = self._extract_response_text_and_citations(response.json())
+            if chat_response.status_code < 400:
+                content, clean_citations = self._extract_chat_text_and_citations(chat_response.json())
+            else:
+                logger.warning(
+                    "xAI chat search returned HTTP %s for '%s'; falling back to Responses API.",
+                    chat_response.status_code,
+                    question,
+                )
+                responses_response = self._post_with_retries(
+                    "responses",
+                    {
+                        "model": self.search_model,
+                        "input": [
+                            {"role": "system", "content": CONTEXT_GATHERER_SYSTEM_PROMPT},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "tools": [{"type": "web_search"}],
+                        "store": False,
+                    },
+                    question,
+                )
+                if responses_response.status_code in {401, 403}:
+                    raise XAIAuthenticationError(
+                        "xAI rejected both chat search and Responses web-search context requests. "
+                        "Check XAI_API_KEY, model access, and account access to live search. "
+                        f"Configured search model: {self.search_model}."
+                    )
+                responses_response.raise_for_status()
+                content, clean_citations = self._extract_response_text_and_citations(responses_response.json())
 
             if not content:
                 raise RuntimeError("Grok web search returned no context text.")
