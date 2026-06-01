@@ -1,14 +1,23 @@
 import AppShell from "@/components/AppShell";
+import AnimatedNumber from "@/components/AnimatedNumber";
 import RecommendationCard from "@/components/RecommendationCard";
-import { formatDate, getAgentRuns, getPerformance, getRecommendations } from "@/lib/api";
+import SignalSearch from "@/components/SignalSearch";
+import { formatDate, getAgentRuns, getRecommendations } from "@/lib/api";
 
 export default async function Home() {
-  const [recommendations, performance, runs] = await Promise.all([
+  const [recommendations, runs] = await Promise.all([
     getRecommendations(),
-    getPerformance(),
     getAgentRuns(),
   ]);
   const latestRun = runs[0];
+  const runTotals = runs.reduce(
+    (totals, run) => ({
+      scanned: totals.scanned + run.markets_scanned,
+      evaluated: totals.evaluated + run.candidates_evaluated,
+      published: totals.published + run.recommendations_published,
+    }),
+    { scanned: 0, evaluated: 0, published: 0 },
+  );
 
   return (
     <AppShell>
@@ -29,19 +38,35 @@ export default async function Home() {
           </div>
           <div className="panel">
             <div className="metric-label">Latest Agent Run</div>
-            <div className="metric-value accent">{latestRun?.status ?? "waiting"}</div>
+            <div
+              className={
+                latestRun?.status === "failed"
+                  ? "metric-value red-text"
+                  : latestRun?.status === "partial"
+                    ? "metric-value violet-text"
+                    : "metric-value accent"
+              }
+            >
+              {latestRun?.status ?? "waiting"}
+            </div>
             <div className="detail-list">
               <div className="detail-row">
                 <span className="metric-label">Scanned</span>
-                <strong className="mono">{latestRun?.markets_scanned ?? 0}</strong>
+                <strong className="mono">
+                  <AnimatedNumber value={latestRun?.markets_scanned ?? 0} />
+                </strong>
               </div>
               <div className="detail-row">
                 <span className="metric-label">Evaluated</span>
-                <strong className="mono">{latestRun?.candidates_evaluated ?? 0}</strong>
+                <strong className="mono">
+                  <AnimatedNumber value={latestRun?.candidates_evaluated ?? 0} />
+                </strong>
               </div>
               <div className="detail-row">
                 <span className="metric-label">Published</span>
-                <strong className="mono">{latestRun?.recommendations_published ?? 0}</strong>
+                <strong className="mono">
+                  <AnimatedNumber value={latestRun?.recommendations_published ?? 0} />
+                </strong>
               </div>
             </div>
           </div>
@@ -50,25 +75,25 @@ export default async function Home() {
         <section className="metric-grid">
           <div className="metric-card">
             <div className="metric-label">Active Signals</div>
-            <div className="metric-value">{recommendations.length}</div>
+            <AnimatedNumber className="metric-value" value={recommendations.length} />
           </div>
           <div className="metric-card">
-            <div className="metric-label">Total Predictions</div>
-            <div className="metric-value">{performance.total_predictions}</div>
+            <div className="metric-label">Markets Scanned</div>
+            <AnimatedNumber className="metric-value" value={runTotals.scanned} />
           </div>
           <div className="metric-card">
-            <div className="metric-label">Accuracy</div>
-            <div className="metric-value accent">{Math.round(performance.accuracy_rate * 100)}%</div>
+            <div className="metric-label">Candidates Evaluated</div>
+            <AnimatedNumber className="metric-value accent" value={runTotals.evaluated} />
           </div>
           <div className="metric-card">
-            <div className="metric-label">Pending</div>
-            <div className="metric-value violet-text">{performance.pending}</div>
+            <div className="metric-label">Published</div>
+            <AnimatedNumber className="metric-value violet-text" value={runTotals.published} />
           </div>
         </section>
 
         <section>
           <div className="toolbar">
-            <input className="searchbox" placeholder="Search markets, outcomes, signals..." readOnly />
+            <SignalSearch recommendations={recommendations} />
             <div className="eyebrow">
               <span className="status-dot" />
               {recommendations.length} signals found
@@ -83,8 +108,8 @@ export default async function Home() {
             </div>
           ) : (
             <div className="empty-state">
-              No active recommendations yet. The backend is scanning successfully; current markets have not cleared
-              the configured edge and confidence thresholds.
+              No active recommendations yet. Atris will publish here once a run clears the configured edge and
+              confidence thresholds.
             </div>
           )}
         </section>

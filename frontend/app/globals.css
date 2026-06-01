@@ -209,6 +209,11 @@ select {
   font-weight: 800;
 }
 
+.number-roller {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+}
+
 .metric-value.accent {
   color: var(--lime);
 }
@@ -232,9 +237,60 @@ select {
   outline: none;
 }
 
+.search-wrap {
+  position: relative;
+  width: min(35rem, 100%);
+}
+
+.search-wrap .searchbox {
+  width: 100%;
+}
+
 .searchbox::placeholder {
   color: var(--muted-2);
 }
+
+.search-panel {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  left: 0;
+  z-index: 30;
+  border: 1px solid var(--line-strong);
+  background: #0b1220;
+  box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.28);
+}
+
+.search-result,
+.search-empty {
+  display: grid;
+  gap: 0.45rem;
+  border-bottom: 1px solid var(--line);
+  padding: 1rem;
+}
+
+.search-result:last-child,
+.search-empty:last-child {
+  border-bottom: 0;
+}
+
+.search-result:hover {
+  background: rgba(124, 108, 255, 0.08);
+}
+
+.search-result-title {
+  color: var(--foreground);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.search-result-meta,
+.search-empty {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+}
+
 
 .feed-grid {
   display: grid;

@@ -1,4 +1,5 @@
-import { AgentRun, formatDate, formatPercent, formatSignedPercent, PerformanceSnapshot } from "@/lib/api";
+import AnimatedNumber from "@/components/AnimatedNumber";
+import { AgentRun, formatDate, PerformanceSnapshot } from "@/lib/api";
 
 export default function PerformanceStats({
   performance,
@@ -7,24 +8,60 @@ export default function PerformanceStats({
   performance: PerformanceSnapshot;
   runs: AgentRun[];
 }) {
+  const runTotals = runs.reduce(
+    (totals, run) => ({
+      scanned: totals.scanned + run.markets_scanned,
+      evaluated: totals.evaluated + run.candidates_evaluated,
+      published: totals.published + run.recommendations_published,
+      failed: totals.failed + (run.status === "failed" ? 1 : 0),
+    }),
+    { scanned: 0, evaluated: 0, published: 0, failed: 0 },
+  );
+  const successRate = runs.length ? ((runs.length - runTotals.failed) / runs.length) * 100 : 0;
+
   return (
     <div className="grid gap-8">
       <div className="metric-grid">
         <div className="metric-card">
+          <div className="metric-label">Markets Scanned</div>
+          <AnimatedNumber className="metric-value" value={runTotals.scanned} />
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Candidates Evaluated</div>
+          <AnimatedNumber className="metric-value accent" value={runTotals.evaluated} />
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Published</div>
+          <AnimatedNumber className="metric-value violet-text" value={runTotals.published} />
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Run Success</div>
+          <AnimatedNumber className="metric-value" value={successRate} suffix="%" />
+        </div>
+      </div>
+
+      <div className="metric-grid">
+        <div className="metric-card">
           <div className="metric-label">Total Predictions</div>
-          <div className="metric-value">{performance.total_predictions}</div>
+          <AnimatedNumber className="metric-value" value={performance.total_predictions} />
         </div>
         <div className="metric-card">
           <div className="metric-label">Accuracy Rate</div>
-          <div className="metric-value accent">{formatPercent(performance.accuracy_rate, 0)}</div>
+          <AnimatedNumber className="metric-value accent" value={performance.accuracy_rate * 100} suffix="%" />
         </div>
         <div className="metric-card">
           <div className="metric-label">Pending</div>
-          <div className="metric-value">{performance.pending}</div>
+          <AnimatedNumber className="metric-value" value={performance.pending} />
         </div>
         <div className="metric-card">
           <div className="metric-label">Average Edge</div>
-          <div className="metric-value violet-text">{formatSignedPercent(performance.average_edge)}</div>
+          <AnimatedNumber
+            className="metric-value violet-text"
+            decimals={1}
+            signed
+            suffix="%"
+            value={performance.average_edge * 100}
+          />
         </div>
       </div>
 
