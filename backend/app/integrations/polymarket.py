@@ -1,6 +1,7 @@
 import httpx
 import json
 import logging
+import math
 import time
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
@@ -56,8 +57,19 @@ class PolymarketClient:
             filtered_markets = []
             now = datetime.now(timezone.utc)
             min_closing_time = now + timedelta(hours=settings.MIN_HOURS_TO_CLOSE)
+            excluded_keywords = [
+                keyword.strip().lower()
+                for keyword in settings.EXCLUDED_MARKET_KEYWORDS.split(",")
+                if keyword.strip()
+            ]
 
             for m in raw_markets:
+                question = str(m.get("question") or "")
+                description = str(m.get("description") or "")
+                searchable_text = f"{question} {description}".lower()
+                if any(keyword in searchable_text for keyword in excluded_keywords):
+                    continue
+
                 # 1. Parse outcomes
                 outcomes_raw = m.get("outcomes")
                 if not outcomes_raw:
@@ -122,32 +134,80 @@ class PolymarketClient:
                 # Determine YES price and market probability
                 yes_index = outcomes_upper.index("YES")
                 yes_price = prices[yes_index]
+                no_price = prices[outcomes_upper.index("NO")]
+
+                if yes_price < settings.MIN_MARKET_PROBABILITY or yes_price > settings.MAX_MARKET_PROBABILITY:
+                    continue
 
                 # Create normalized candidate object
                 candidate = {
                     "polymarket_id": str(m.get("id")),
-                    "question": m.get("question"),
+                    "question": question,
                     "category": m.get("category", "General"),
                     "closing_time": closing_time,
                     "volume": volume,
                     "liquidity": liquidity,
                     "yes_price": yes_price,
+                    "no_price": no_price,
                     "outcomes": outcomes,
                     "outcome_prices": prices,
                     "raw_data": m
                 }
+                candidate["selection_score"] = self._score_candidate(candidate, now)
                 filtered_markets.append(candidate)
 
             logger.info(f"Filtering complete. Found {len(filtered_markets)} valid candidates.")
             
-            # Sort by volume descending and take up to the configured limit
-            filtered_markets.sort(key=lambda x: x["volume"], reverse=True)
+            # Rank candidates by market quality, not raw volume alone. This avoids
+            # spending LLM calls on ultra-longshot celebrity/sports outrights that
+            # are liquid but rarely actionable for V1 recommendations.
+            filtered_markets.sort(key=lambda x: x["selection_score"], reverse=True)
             candidate_limit = min(
                 settings.DEFAULT_CANDIDATES_PER_RUN,
                 settings.MAX_CANDIDATES_PER_RUN,
             )
-            return filtered_markets[:candidate_limit]
+            return self._select_diverse_candidates(filtered_markets, candidate_limit)
 
         except Exception as e:
             logger.error(f"Error fetching markets from Polymarket: {e}")
             raise e
+
+    def _select_diverse_candidates(self, markets: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+        selected: List[Dict[str, Any]] = []
+        event_group_counts: Dict[str, int] = {}
+
+        for market in markets:
+            group_key = self._event_group_key(market["question"])
+            group_count = event_group_counts.get(group_key, 0)
+            if group_count >= settings.MAX_MARKETS_PER_EVENT_GROUP:
+                continue
+
+            selected.append(market)
+            event_group_counts[group_key] = group_count + 1
+            if len(selected) >= limit:
+                return selected
+
+        return selected
+
+    def _event_group_key(self, question: str) -> str:
+        normalized = " ".join(question.lower().replace("?", "").split())
+        if normalized.startswith("will ") and " win the " in normalized:
+            return f"win_the::{normalized.split(' win the ', 1)[1]}"
+        return normalized
+
+    def _score_candidate(self, candidate: Dict[str, Any], now: datetime) -> float:
+        yes_price = float(candidate["yes_price"])
+        volume = max(float(candidate["volume"]), 1.0)
+        liquidity = max(float(candidate["liquidity"]), 1.0)
+        closing_time = candidate["closing_time"]
+
+        probability_balance = 1.0 - min(abs(yes_price - 0.5) / 0.5, 1.0)
+        days_to_close = max((closing_time - now).total_seconds() / 86400, 0.0)
+        time_score = 1.0 / (1.0 + abs(days_to_close - 30.0) / 30.0)
+
+        return (
+            math.log10(volume + 1.0) * 0.45
+            + math.log10(liquidity + 1.0) * 0.35
+            + probability_balance * 1.4
+            + time_score * 0.8
+        )

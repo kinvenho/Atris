@@ -11,6 +11,11 @@ from app.agent.prompts import CONTEXT_GATHERER_SYSTEM_PROMPT, PROBABILITY_ENGINE
 
 logger = logging.getLogger(__name__)
 
+
+class XAIAuthenticationError(RuntimeError):
+    """Raised when xAI rejects the configured key, model, or endpoint access."""
+
+
 class XAIClient:
     def __init__(self):
         # xAI is OpenAI-compatible
@@ -19,6 +24,7 @@ class XAIClient:
             base_url=settings.LLM_BASE_URL
         )
         self.model = settings.LLM_MODEL
+        self.search_model = settings.LLM_SEARCH_MODEL
         self.base_url = settings.LLM_BASE_URL.rstrip("/")
 
     def _extract_response_text_and_citations(self, payload: Dict[str, Any]) -> tuple[str, list[str]]:
@@ -79,7 +85,7 @@ class XAIClient:
                             "Content-Type": "application/json",
                         },
                         json={
-                            "model": self.model,
+                            "model": self.search_model,
                             "input": [
                                 {
                                     "role": "system",
@@ -92,6 +98,12 @@ class XAIClient:
                         },
                         timeout=75.0,
                     )
+                    if response.status_code in {401, 403}:
+                        raise XAIAuthenticationError(
+                            "xAI rejected the context request. Check XAI_API_KEY, model access, "
+                            "and whether this account can use the Responses API with web search. "
+                            f"Configured search model: {self.search_model}."
+                        )
                     response.raise_for_status()
                     break
                 except (httpx.TimeoutException, httpx.TransportError) as exc:
@@ -160,6 +172,15 @@ class XAIClient:
                     )
                     if attempt == 0:
                         time.sleep(2)
+                except Exception as exc:
+                    status_code = getattr(exc, "status_code", None) or getattr(
+                        getattr(exc, "response", None), "status_code", None
+                    )
+                    if status_code in {401, 403}:
+                        raise XAIAuthenticationError(
+                            "xAI rejected the probability request. Check XAI_API_KEY and model access."
+                        ) from exc
+                    raise
 
             if response is None:
                 raise RuntimeError(f"Grok probability request failed after retries: {last_error}")

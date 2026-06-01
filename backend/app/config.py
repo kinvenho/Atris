@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # xAI Settings
     XAI_API_KEY: str = ""
     LLM_MODEL: str = "grok-3"
+    LLM_SEARCH_MODEL: str = "grok-4.3"
     LLM_BASE_URL: str = "https://api.x.ai/v1"
 
     # Pipeline Thresholds & Limits
@@ -25,6 +26,10 @@ class Settings(BaseSettings):
     MIN_HOURS_TO_CLOSE: int = 48
     MAX_CANDIDATES_PER_RUN: int = 10
     DEFAULT_CANDIDATES_PER_RUN: int = 7
+    MIN_MARKET_PROBABILITY: float = 0.03
+    MAX_MARKET_PROBABILITY: float = 0.97
+    MAX_MARKETS_PER_EVENT_GROUP: int = 2
+    EXCLUDED_MARKET_KEYWORDS: str = "gta vi,jesus christ"
     MIN_EDGE_TO_PUBLISH: float = 0.08
     MIN_CONFIDENCE_TO_PUBLISH: float = 0.60
     PIPELINE_CADENCE_MINUTES: int = 45

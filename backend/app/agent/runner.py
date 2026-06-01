@@ -8,8 +8,52 @@ from app.agent.context import gather_context
 from app.agent.probability import estimate_probability
 from app.agent.decision import evaluate_decision
 from app.agent.writer import write_recommendation
+from app.integrations.xai import XAIAuthenticationError
 
 logger = logging.getLogger(__name__)
+
+
+def _run_error(
+    step: str,
+    message: str,
+    *,
+    kind: str = "runtime_error",
+    market_question: str | None = None,
+    polymarket_id: str | None = None,
+    include_trace: bool = True,
+) -> Dict[str, Any]:
+    error: Dict[str, Any] = {
+        "kind": kind,
+        "step": step,
+        "message": message,
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
+    if market_question:
+        error["market_question"] = market_question
+    if polymarket_id:
+        error["polymarket_id"] = polymarket_id
+    if include_trace:
+        error["trace"] = traceback.format_exc()
+    return error
+
+
+def _final_status(
+    errors: List[Dict[str, Any]],
+    markets_scanned: int,
+    candidates_evaluated: int,
+    recommendations_published: int,
+) -> str:
+    if not errors:
+        return "success"
+
+    blocking_error_kinds = {"llm_auth", "scanner_error", "pipeline_error"}
+    if recommendations_published == 0 and any(e.get("kind") in blocking_error_kinds for e in errors):
+        return "failed"
+
+    if markets_scanned == 0 or candidates_evaluated == 0:
+        return "failed"
+
+    return "partial"
 
 def run_pipeline(dry_run: bool = False) -> Dict[str, Any]:
     """
@@ -59,12 +103,7 @@ def run_pipeline(dry_run: bool = False) -> Dict[str, Any]:
         except Exception as scan_err:
             error_msg = f"Scanner failed: {str(scan_err)}"
             logger.error(error_msg)
-            errors_list.append({
-                "step": "MarketScanner",
-                "message": error_msg,
-                "trace": traceback.format_exc(),
-                "time": datetime.now(timezone.utc).isoformat()
-            })
+            errors_list.append(_run_error("MarketScanner", error_msg, kind="scanner_error"))
 
         # Process each candidate
         for cand in candidates:
@@ -92,25 +131,39 @@ def run_pipeline(dry_run: bool = False) -> Dict[str, Any]:
                     write_recommendation(cand, decision, context)
                     recommendations_published_count += 1
 
+            except XAIAuthenticationError as item_err:
+                error_msg = str(item_err)
+                logger.error("Stopping run after xAI authentication/access failure: %s", error_msg)
+                errors_list.append(
+                    _run_error(
+                        "ContextGatherer",
+                        error_msg,
+                        kind="llm_auth",
+                        market_question=question,
+                        polymarket_id=polymarket_id,
+                        include_trace=False,
+                    )
+                )
+                break
             except Exception as item_err:
                 error_msg = f"Failed evaluating candidate '{question}': {str(item_err)}"
                 logger.error(error_msg)
-                errors_list.append({
-                    "step": "CandidateEvaluation",
-                    "market_question": question,
-                    "polymarket_id": polymarket_id,
-                    "message": error_msg,
-                    "trace": traceback.format_exc(),
-                    "time": datetime.now(timezone.utc).isoformat()
-                })
+                errors_list.append(
+                    _run_error(
+                        "CandidateEvaluation",
+                        error_msg,
+                        market_question=question,
+                        polymarket_id=polymarket_id,
+                    )
+                )
 
         # Calculate final status
-        if len(errors_list) == 0:
-            final_status = "success"
-        elif recommendations_published_count > 0 or markets_scanned_count > 0:
-            final_status = "partial"
-        else:
-            final_status = "failed"
+        final_status = _final_status(
+            errors_list,
+            markets_scanned_count,
+            candidates_evaluated_count,
+            recommendations_published_count,
+        )
 
         # Update run record on completion
         completed_at = datetime.now(timezone.utc)
@@ -131,12 +184,7 @@ def run_pipeline(dry_run: bool = False) -> Dict[str, Any]:
         # Catch any catastrophic error outside of scan/candidates
         error_msg = f"Catastrophic failure in pipeline runner: {str(fatal_err)}"
         logger.critical(error_msg)
-        errors_list.append({
-            "step": "PipelineRunner",
-            "message": error_msg,
-            "trace": traceback.format_exc(),
-            "time": datetime.now(timezone.utc).isoformat()
-        })
+        errors_list.append(_run_error("PipelineRunner", error_msg, kind="pipeline_error"))
         
         try:
             completed_at = datetime.now(timezone.utc)
