@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "grok-3"
     LLM_SEARCH_MODEL: str = "grok-4.3"
     LLM_BASE_URL: str = "https://api.x.ai/v1"
+    LLM_PREFLIGHT_ENABLED: bool = True
+    LLM_MAX_OUTPUT_TOKENS: int = 700
+    CONTEXT_MAX_OUTPUT_TOKENS: int = 900
+    CONTEXT_MAX_SEARCH_RESULTS: int = 3
+    MAX_CONTEXT_CHARS_FOR_PROBABILITY: int = 4000
 
     # Pipeline Thresholds & Limits
     MIN_VOLUME: float = 10000.0
@@ -26,6 +31,7 @@ class Settings(BaseSettings):
     MIN_HOURS_TO_CLOSE: int = 48
     MAX_CANDIDATES_PER_RUN: int = 10
     DEFAULT_CANDIDATES_PER_RUN: int = 7
+    MAX_LLM_CANDIDATES_PER_RUN: int = 3
     MIN_MARKET_PROBABILITY: float = 0.03
     MAX_MARKET_PROBABILITY: float = 0.97
     MAX_MARKETS_PER_EVENT_GROUP: int = 2

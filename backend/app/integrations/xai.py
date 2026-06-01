@@ -27,6 +27,29 @@ class XAIClient:
         self.search_model = settings.LLM_SEARCH_MODEL
         self.base_url = settings.LLM_BASE_URL.rstrip("/")
 
+    def validate_access(self) -> None:
+        if not settings.LLM_PREFLIGHT_ENABLED:
+            return
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": "Reply with OK."}],
+                max_tokens=3,
+                timeout=20.0,
+            )
+            if not response.choices:
+                raise RuntimeError("xAI preflight returned no choices.")
+        except Exception as exc:
+            status_code = getattr(exc, "status_code", None) or getattr(
+                getattr(exc, "response", None), "status_code", None
+            )
+            if status_code in {401, 403}:
+                raise XAIAuthenticationError(
+                    "xAI preflight failed before scanning markets. Check API key, credits, spending limit, and model access."
+                ) from exc
+            raise
+
     def _extract_response_text_and_citations(self, payload: Dict[str, Any]) -> tuple[str, list[str]]:
         text_parts: list[str] = []
         citations: list[str] = []
@@ -146,8 +169,9 @@ class XAIClient:
                     "search_parameters": {
                         "mode": "auto",
                         "return_citations": True,
-                        "max_search_results": 10,
+                        "max_search_results": settings.CONTEXT_MAX_SEARCH_RESULTS,
                     },
+                    "max_tokens": settings.CONTEXT_MAX_OUTPUT_TOKENS,
                 },
                 question,
             )
@@ -169,6 +193,7 @@ class XAIClient:
                             {"role": "user", "content": prompt},
                         ],
                         "tools": [{"type": "web_search"}],
+                        "max_output_tokens": settings.CONTEXT_MAX_OUTPUT_TOKENS,
                         "store": False,
                     },
                     question,
@@ -203,7 +228,7 @@ class XAIClient:
         user_prompt = (
             f"Market Question: {question}\n"
             f"Description: {description if description else 'None'}\n\n"
-            f"Gathered Web Search Context:\n{context}"
+            f"Gathered Web Search Context:\n{context[:settings.MAX_CONTEXT_CHARS_FOR_PROBABILITY]}"
         )
 
         try:
@@ -220,6 +245,7 @@ class XAIClient:
                             {"role": "user", "content": user_prompt}
                         ],
                         response_format={"type": "json_object"},
+                        max_tokens=settings.LLM_MAX_OUTPUT_TOKENS,
                         timeout=75.0,
                     )
                     break

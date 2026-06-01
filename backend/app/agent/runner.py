@@ -8,7 +8,8 @@ from app.agent.context import gather_context
 from app.agent.probability import estimate_probability
 from app.agent.decision import evaluate_decision
 from app.agent.writer import write_recommendation
-from app.integrations.xai import XAIAuthenticationError
+from app.integrations.xai import XAIAuthenticationError, XAIClient
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,32 @@ def run_pipeline(dry_run: bool = False) -> Dict[str, Any]:
     errors_list = []
 
     try:
+        try:
+            XAIClient().validate_access()
+        except XAIAuthenticationError as preflight_err:
+            error_msg = str(preflight_err)
+            logger.error("Stopping run before market scan: %s", error_msg)
+            errors_list.append(
+                _run_error(
+                    "XAIPreflight",
+                    error_msg,
+                    kind="llm_auth",
+                    include_trace=False,
+                )
+            )
+            completed_at = datetime.now(timezone.utc)
+            update_data = {
+                "completed_at": completed_at.isoformat(),
+                "markets_scanned": 0,
+                "candidates_evaluated": 0,
+                "recommendations_published": 0,
+                "errors": errors_list,
+                "status": "failed",
+            }
+            if not dry_run:
+                supabase.table("agent_runs").update(update_data).eq("id", run_id).execute()
+            return {**update_data, "dry_run": dry_run}
+
         # Step 1: Scan
         candidates = []
         try:
@@ -106,7 +133,7 @@ def run_pipeline(dry_run: bool = False) -> Dict[str, Any]:
             errors_list.append(_run_error("MarketScanner", error_msg, kind="scanner_error"))
 
         # Process each candidate
-        for cand in candidates:
+        for cand in candidates[: settings.MAX_LLM_CANDIDATES_PER_RUN]:
             question = cand.get("question", "Unknown")
             polymarket_id = cand.get("polymarket_id")
             
