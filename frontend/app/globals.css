@@ -36,12 +36,7 @@ html {
 
 body {
   min-height: 100vh;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(105deg, rgba(124, 108, 255, 0.08), transparent 34rem),
-    var(--background);
-  background-size: 4rem 4rem, 4rem 4rem, auto, auto;
+  background: linear-gradient(180deg, #060b13 0%, #070c14 100%);
   color: var(--foreground);
   font-family: "Barlow", Arial, Helvetica, sans-serif;
   letter-spacing: 0;
@@ -118,7 +113,7 @@ select {
 .container {
   width: min(94rem, calc(100% - 2rem));
   margin: 0 auto;
-  padding: clamp(2.5rem, 6vw, 5.5rem) 0;
+  padding: clamp(2rem, 4vw, 4rem) 0;
 }
 
 .hero {
@@ -126,7 +121,7 @@ select {
   grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
   gap: clamp(2rem, 5vw, 5rem);
   align-items: end;
-  padding-bottom: clamp(2rem, 5vw, 4rem);
+  padding-bottom: clamp(1.5rem, 3vw, 2.5rem);
 }
 
 .eyebrow {
@@ -154,9 +149,9 @@ select {
 .hero-title {
   margin-top: 1.8rem;
   max-width: 56rem;
-  font-size: clamp(3.2rem, 8vw, 7rem);
+  font-size: clamp(2.8rem, 6vw, 5.4rem);
   font-weight: 900;
-  line-height: 0.88;
+  line-height: 0.92;
   text-transform: uppercase;
 }
 
@@ -169,7 +164,7 @@ select {
   margin-top: 1.35rem;
   color: var(--muted);
   font-family: "JetBrains Mono", monospace;
-  font-size: clamp(1rem, 1.5vw, 1.25rem);
+  font-size: clamp(0.95rem, 1.2vw, 1.1rem);
   line-height: 1.6;
 }
 
@@ -178,7 +173,7 @@ select {
 .recommendation-card,
 .table-panel {
   border: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(14, 23, 39, 0.96), rgba(9, 15, 26, 0.96));
+  background: #0b1220;
   clip-path: polygon(0 0, calc(100% - 2rem) 0, 100% 2rem, 100% 100%, 2rem 100%, 0 calc(100% - 2rem));
 }
 

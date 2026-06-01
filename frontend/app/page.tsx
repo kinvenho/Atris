@@ -1,6 +1,6 @@
 import AppShell from "@/components/AppShell";
 import RecommendationCard from "@/components/RecommendationCard";
-import { getAgentRuns, getPerformance, getRecommendations } from "@/lib/api";
+import { formatDate, getAgentRuns, getPerformance, getRecommendations } from "@/lib/api";
 
 export default async function Home() {
   const [recommendations, performance, runs] = await Promise.all([
@@ -87,6 +87,43 @@ export default async function Home() {
               the configured edge and confidence thresholds.
             </div>
           )}
+        </section>
+
+        <section className="mt-10">
+          <div className="section-title">
+            <span className="status-dot" />
+            Recent Agent Runs
+          </div>
+          <div className="table-panel mt-5">
+            <table className="rank-table">
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Status</th>
+                  <th>Scanned</th>
+                  <th>Evaluated</th>
+                  <th>Published</th>
+                  <th>Completed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.slice(0, 5).map((run, index) => (
+                  <tr key={run.id}>
+                    <td>
+                      <span className="rank-cell">#{index + 1}</span>
+                    </td>
+                    <td className={run.status === "success" ? "lime-text" : run.status === "failed" ? "red-text" : "violet-text"}>
+                      {run.status}
+                    </td>
+                    <td>{run.markets_scanned}</td>
+                    <td>{run.candidates_evaluated}</td>
+                    <td>{run.recommendations_published}</td>
+                    <td>{formatDate(run.completed_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       </main>
     </AppShell>
