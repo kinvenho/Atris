@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     CONTEXT_MAX_OUTPUT_TOKENS: int = 900
     CONTEXT_MAX_SEARCH_RESULTS: int = 3
     MAX_CONTEXT_CHARS_FOR_PROBABILITY: int = 4000
+    DAILY_LLM_BUDGET_USD: float = 0.50
+    ESTIMATED_LLM_COST_PER_CANDIDATE_USD: float = 0.025
+    MAX_LLM_CANDIDATES_PER_DAY: int = 20
 
     # Pipeline Thresholds & Limits
     MIN_VOLUME: float = 10000.0

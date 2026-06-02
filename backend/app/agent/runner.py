@@ -1,6 +1,6 @@
 import logging
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from typing import Dict, Any, List
 from app.services.supabase_client import get_supabase
 from app.agent.scanner import scan_markets
@@ -55,6 +55,30 @@ def _final_status(
         return "failed"
 
     return "partial"
+
+
+def _daily_llm_candidate_allowance(supabase, started_at: datetime, run_id: str | None) -> int:
+    budget_cap = int(settings.DAILY_LLM_BUDGET_USD / settings.ESTIMATED_LLM_COST_PER_CANDIDATE_USD)
+    daily_cap = max(0, min(settings.MAX_LLM_CANDIDATES_PER_DAY, budget_cap))
+    if supabase is None:
+        return daily_cap
+
+    day_start = datetime.combine(started_at.date(), time.min, tzinfo=timezone.utc).isoformat()
+    day_end = datetime.combine(started_at.date(), time.max, tzinfo=timezone.utc).isoformat()
+    query = (
+        supabase.table("agent_runs")
+        .select("id,candidates_evaluated")
+        .gte("started_at", day_start)
+        .lte("started_at", day_end)
+    )
+    response = query.execute()
+    used_today = sum(
+        int(row.get("candidates_evaluated") or 0)
+        for row in response.data or []
+        if row.get("id") != run_id
+    )
+
+    return max(0, daily_cap - used_today)
 
 def run_pipeline(dry_run: bool = False) -> Dict[str, Any]:
     """
@@ -122,6 +146,32 @@ def run_pipeline(dry_run: bool = False) -> Dict[str, Any]:
                 supabase.table("agent_runs").update(update_data).eq("id", run_id).execute()
             return {**update_data, "dry_run": dry_run}
 
+        daily_candidate_allowance = _daily_llm_candidate_allowance(supabase, started_at, run_id)
+        if daily_candidate_allowance <= 0:
+            message = (
+                "Daily LLM budget exhausted. Skipping market scan and candidate evaluation until the next UTC day."
+            )
+            logger.info(message)
+            completed_at = datetime.now(timezone.utc)
+            update_data = {
+                "completed_at": completed_at.isoformat(),
+                "markets_scanned": 0,
+                "candidates_evaluated": 0,
+                "recommendations_published": 0,
+                "errors": [
+                    _run_error(
+                        "BudgetLimiter",
+                        message,
+                        kind="daily_budget_exhausted",
+                        include_trace=False,
+                    )
+                ],
+                "status": "success",
+            }
+            if not dry_run:
+                supabase.table("agent_runs").update(update_data).eq("id", run_id).execute()
+            return {**update_data, "dry_run": dry_run}
+
         # Step 1: Scan
         candidates = []
         try:
@@ -133,7 +183,8 @@ def run_pipeline(dry_run: bool = False) -> Dict[str, Any]:
             errors_list.append(_run_error("MarketScanner", error_msg, kind="scanner_error"))
 
         # Process each candidate
-        for cand in candidates[: settings.MAX_LLM_CANDIDATES_PER_RUN]:
+        run_candidate_limit = min(settings.MAX_LLM_CANDIDATES_PER_RUN, daily_candidate_allowance)
+        for cand in candidates[:run_candidate_limit]:
             question = cand.get("question", "Unknown")
             polymarket_id = cand.get("polymarket_id")
             
