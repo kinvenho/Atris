@@ -89,7 +89,7 @@ Near-term:
 
 Race-weekend:
 
-- Add scheduled race-weekend ingestion.
+- Add scheduled race-weekend ingestion. The backend now has a reusable F1 refresh job for this.
 - Record or consume live timing, race-control, weather, position, pit, tire, and gap data.
 - Update prediction snapshots as session state changes.
 
@@ -152,9 +152,14 @@ GET  /recommendations/{id}
 GET  /performance
 GET  /agent/runs
 POST /agent/trigger
+GET  /f1/sources
+GET  /f1/live-readiness
+GET  /f1/stored/seasons/{season}/races
+GET  /f1/predictions/seasons/{season}/rounds/{round}
+POST /f1/refresh
 ```
 
-`POST /agent/trigger` requires the `x-atris-admin-token` header in production.
+`POST /agent/trigger` and F1 ingestion/refresh endpoints require the `x-atris-admin-token` header in production.
 
 Dry-run example:
 
@@ -194,6 +199,9 @@ LLM_MODEL=grok-3
 LLM_BASE_URL=https://api.x.ai/v1
 AGENT_ADMIN_TOKEN=
 DEFAULT_CANDIDATES_PER_RUN=7
+F1_REFRESH_SEASON=current
+F1_REFRESH_SESSION_LIMIT=250
+F1_REFRESH_RETRAIN_MODELS=false
 ```
 
 Use a Supabase service-role key only on trusted backend services. Do not expose it to the frontend.
@@ -266,15 +274,19 @@ Cron services use the same repo and same environment variables, with only `ATRIS
 Atris Runner  -> ATRIS_PROCESS=runner
 Atris Outcome -> ATRIS_PROCESS=outcome
 Atris Scoring -> ATRIS_PROCESS=scoring
+Atris F1      -> ATRIS_PROCESS=f1-refresh
 ```
 
 Recommended schedules:
 
 ```txt
-runner   */30 * * * *
-outcome  0 */2 * * *
-scoring  0 0 * * *
+runner     */30 * * * *
+outcome    0 */2 * * *
+scoring    0 0 * * *
+f1-refresh 0 */6 * * *
 ```
+
+The F1 refresh process is idempotent. It refreshes sources, schedule, OpenF1 sessions, race results, qualifying results, feature rows, and model training examples. Model retraining is opt-in with `F1_REFRESH_RETRAIN_MODELS=true` or the `retrain_models=true` query parameter on `POST /f1/refresh`.
 
 ## Security Notes
 

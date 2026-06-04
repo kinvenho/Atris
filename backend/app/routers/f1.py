@@ -6,6 +6,7 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from app.models.f1 import F1DataSource, F1LiveReadiness, F1Race, F1SeasonSchedule, F1Session
 from app.config import settings
 from app.services.f1_model_service import F1ModelService
+from app.services.f1_refresh_service import F1RefreshService
 from app.services.f1_service import F1Service
 from app.services.f1_storage_service import F1StorageService
 
@@ -29,6 +30,33 @@ async def get_f1_sources():
 @router.get("/live-readiness", response_model=F1LiveReadiness)
 async def get_live_readiness():
     return F1Service.get_live_readiness()
+
+
+@router.post("/refresh", response_model=Dict[str, Any])
+async def refresh_f1_data(
+    season: str = Query(default="current"),
+    include_results: bool = Query(default=True),
+    rebuild_features: bool = Query(default=True),
+    rebuild_training: bool = Query(default=True),
+    retrain_models: bool = Query(default=False),
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        normalized_season: int | str = "current" if season == "current" else int(season)
+        return F1RefreshService.refresh_season(
+            season=normalized_season,
+            include_results=include_results,
+            rebuild_features=rebuild_features,
+            rebuild_training=rebuild_training,
+            retrain_models=retrain_models,
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="season must be a year or 'current'")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/ingest/sources", response_model=List[Dict[str, Any]])

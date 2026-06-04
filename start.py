@@ -8,6 +8,7 @@ COMMANDS = {
     "runner": [sys.executable, "-m", "app.agent.runner"],
     "outcome": [sys.executable, "-m", "app.agent.outcome"],
     "scoring": [sys.executable, "-m", "app.agent.scoring"],
+    "f1-refresh": [sys.executable, "-m", "app.agent.f1_refresh"],
 }
 
 

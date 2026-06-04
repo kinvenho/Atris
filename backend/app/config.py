@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     JOLPICA_BASE_URL: str = "https://api.jolpi.ca/ergast/f1"
     OPENF1_BASE_URL: str = "https://api.openf1.org/v1"
     F1_HTTP_TIMEOUT_SECONDS: float = 20.0
+    F1_REFRESH_SEASON: str = "current"
+    F1_REFRESH_SESSION_LIMIT: int = 250
+    F1_REFRESH_RETRAIN_MODELS: bool = False
 
     # Load from .env file if it exists
     model_config = SettingsConfigDict(
