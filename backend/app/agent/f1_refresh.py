@@ -17,5 +17,6 @@ if __name__ == "__main__":
     result = F1RefreshService.refresh_season(
         season=season,
         retrain_models=should_retrain,
+        refresh_live_sessions=True,
     )
     logging.info("F1 refresh completed: %s", result)

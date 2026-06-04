@@ -123,3 +123,19 @@ class F1Service:
             session_type=session_type,
             limit=limit,
         )
+
+    @staticmethod
+    def get_race_control(session_key: int | str, limit: int = 500) -> List[dict]:
+        return OpenF1Client().fetch_race_control(session_key=session_key, limit=limit)
+
+    @staticmethod
+    def get_weather(session_key: int | str, limit: int = 500) -> List[dict]:
+        return OpenF1Client().fetch_weather(session_key=session_key, limit=limit)
+
+    @staticmethod
+    def get_position(session_key: int | str, limit: int = 1500) -> List[dict]:
+        return OpenF1Client().fetch_position(session_key=session_key, limit=limit)
+
+    @staticmethod
+    def get_laps(session_key: int | str, limit: int = 1500) -> List[dict]:
+        return OpenF1Client().fetch_laps(session_key=session_key, limit=limit)

@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     F1_REFRESH_SEASON: str = "current"
     F1_REFRESH_SESSION_LIMIT: int = 250
     F1_REFRESH_RETRAIN_MODELS: bool = False
+    F1_REFRESH_LIVE_SESSION_COUNT: int = 3
+    F1_LIVE_EVENT_LIMIT: int = 500
+    F1_DRIVER_SNAPSHOT_LIMIT: int = 1500
 
     # Load from .env file if it exists
     model_config = SettingsConfigDict(

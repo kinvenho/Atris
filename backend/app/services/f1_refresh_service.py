@@ -19,6 +19,8 @@ class F1RefreshService:
         rebuild_training: bool = True,
         retrain_models: bool = False,
         session_limit: int | None = None,
+        refresh_live_sessions: bool = True,
+        live_session_count: int | None = None,
     ) -> Dict[str, Any]:
         normalized_season = F1RefreshService._normalize_season(season)
         started_at = datetime.now(timezone.utc)
@@ -34,6 +36,29 @@ class F1RefreshService:
                 limit=session_limit or settings.F1_REFRESH_SESSION_LIMIT,
             ),
         )
+
+        if refresh_live_sessions:
+            for session_key in F1RefreshService._recent_session_keys(
+                normalized_season,
+                live_session_count or settings.F1_REFRESH_LIVE_SESSION_COUNT,
+            ):
+                F1RefreshService._run_step(
+                    steps,
+                    f"ingest_session_events:{session_key}",
+                    lambda session_key=session_key: F1StorageService.ingest_session_events(
+                        session_key=session_key,
+                        limit=settings.F1_LIVE_EVENT_LIMIT,
+                    ),
+                )
+                F1RefreshService._run_step(
+                    steps,
+                    f"ingest_driver_session_snapshots:{session_key}",
+                    lambda session_key=session_key: F1StorageService.ingest_driver_session_snapshots(
+                        session_key=session_key,
+                        position_limit=settings.F1_DRIVER_SNAPSHOT_LIMIT,
+                        lap_limit=settings.F1_DRIVER_SNAPSHOT_LIMIT,
+                    ),
+                )
 
         if include_results:
             F1RefreshService._run_step(
@@ -129,6 +154,18 @@ class F1RefreshService:
                 return int(configured)
             return datetime.now(timezone.utc).year
         return int(season_value)
+
+    @staticmethod
+    def _recent_session_keys(season: int, limit: int) -> List[int]:
+        if limit <= 0:
+            return []
+        sessions = F1StorageService.list_sessions(season, limit=settings.F1_REFRESH_SESSION_LIMIT)
+        sessions = [
+            session for session in sessions
+            if session.get("session_key") and session.get("session_type") in {"Race", "Qualifying", "Sprint", "Practice"}
+        ]
+        sessions.sort(key=lambda session: session.get("date_start") or "", reverse=True)
+        return [int(session["session_key"]) for session in sessions[:limit]]
 
     @staticmethod
     def _records_processed(result: Any) -> int:

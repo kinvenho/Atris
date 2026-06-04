@@ -134,6 +134,43 @@ create table if not exists public.f1_sessions (
     updated_at timestamptz not null default now()
 );
 
+create table if not exists public.f1_session_events (
+    id uuid primary key default gen_random_uuid(),
+    session_key integer references public.f1_sessions(session_key) on delete cascade,
+    event_key text not null unique,
+    event_type text not null check (event_type in ('race_control', 'weather')),
+    event_time timestamptz,
+    driver_number integer,
+    lap_number integer,
+    category text,
+    flag text,
+    scope text,
+    message text,
+    value jsonb not null default '{}'::jsonb,
+    source_name text not null default 'OpenF1',
+    source_payload jsonb not null default '{}'::jsonb,
+    fetched_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists public.f1_driver_session_snapshots (
+    id uuid primary key default gen_random_uuid(),
+    session_key integer references public.f1_sessions(session_key) on delete cascade,
+    driver_number integer not null,
+    latest_position integer,
+    latest_lap_number integer,
+    fastest_lap_duration numeric,
+    lap_count integer not null default 0,
+    position_samples integer not null default 0,
+    metrics jsonb not null default '{}'::jsonb,
+    source_payload jsonb not null default '{}'::jsonb,
+    fetched_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (session_key, driver_number)
+);
+
 create table if not exists public.f1_race_results (
     id uuid primary key default gen_random_uuid(),
     season integer not null,
@@ -358,6 +395,15 @@ create index if not exists f1_races_season_date_idx
 create index if not exists f1_sessions_year_type_idx
     on public.f1_sessions (year, session_type, date_start);
 
+create index if not exists f1_session_events_session_time_idx
+    on public.f1_session_events (session_key, event_time desc);
+
+create index if not exists f1_session_events_type_idx
+    on public.f1_session_events (event_type, event_time desc);
+
+create index if not exists f1_driver_session_snapshots_session_position_idx
+    on public.f1_driver_session_snapshots (session_key, latest_position);
+
 create index if not exists f1_race_results_season_round_idx
     on public.f1_race_results (season, round, position_order);
 
@@ -424,6 +470,8 @@ alter table public.f1_sources enable row level security;
 alter table public.f1_ingestion_runs enable row level security;
 alter table public.f1_races enable row level security;
 alter table public.f1_sessions enable row level security;
+alter table public.f1_session_events enable row level security;
+alter table public.f1_driver_session_snapshots enable row level security;
 alter table public.f1_race_results enable row level security;
 alter table public.f1_qualifying_results enable row level security;
 alter table public.f1_driver_season_features enable row level security;

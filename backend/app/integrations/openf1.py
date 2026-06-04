@@ -34,6 +34,29 @@ class OpenF1Client:
         sessions = [self._parse_session(item) for item in response.json()]
         return [session for session in sessions if session is not None][:limit]
 
+    def fetch_race_control(self, session_key: int | str, limit: int = 500) -> List[Dict[str, Any]]:
+        return self._fetch_rows("race_control", {"session_key": session_key}, limit)
+
+    def fetch_weather(self, session_key: int | str, limit: int = 500) -> List[Dict[str, Any]]:
+        return self._fetch_rows("weather", {"session_key": session_key}, limit)
+
+    def fetch_position(self, session_key: int | str, limit: int = 1500) -> List[Dict[str, Any]]:
+        return self._fetch_rows("position", {"session_key": session_key}, limit)
+
+    def fetch_laps(self, session_key: int | str, limit: int = 1500) -> List[Dict[str, Any]]:
+        return self._fetch_rows("laps", {"session_key": session_key}, limit)
+
+    def _fetch_rows(self, endpoint: str, params: Dict[str, Any], limit: int) -> List[Dict[str, Any]]:
+        url = f"{self.base_url}/{endpoint}"
+        with httpx.Client(timeout=settings.F1_HTTP_TIMEOUT_SECONDS) as client:
+            response = client.get(url, params=params)
+            response.raise_for_status()
+
+        rows = response.json()
+        if not isinstance(rows, list):
+            return []
+        return [row for row in rows if isinstance(row, dict)][:limit]
+
     def _parse_session(self, item: Dict[str, Any]) -> Optional[F1Session]:
         try:
             session_key = int(item.get("session_key"))

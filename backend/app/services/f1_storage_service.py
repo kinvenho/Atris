@@ -1,4 +1,6 @@
 import logging
+import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
@@ -96,6 +98,110 @@ class F1StorageService:
             }
         except Exception as e:
             logger.error("F1 session ingestion failed: %s", e)
+            F1StorageService._finish_ingestion_run(
+                run_id=run_id,
+                status="failed",
+                records_processed=0,
+                errors=[str(e)],
+            )
+            raise
+
+    @staticmethod
+    def ingest_session_events(
+        session_key: int,
+        include_race_control: bool = True,
+        include_weather: bool = True,
+        limit: int = 500,
+    ) -> Dict[str, Any]:
+        run_id = F1StorageService._start_ingestion_run(
+            source_name="OpenF1",
+            ingestion_type="session_events",
+            metadata={
+                "session_key": session_key,
+                "include_race_control": include_race_control,
+                "include_weather": include_weather,
+                "limit": limit,
+            },
+        )
+        try:
+            rows: List[Dict[str, Any]] = []
+            if include_race_control:
+                rows.extend(
+                    F1StorageService._race_control_event_to_row(session_key, row)
+                    for row in F1Service.get_race_control(session_key=session_key, limit=limit)
+                )
+            if include_weather:
+                rows.extend(
+                    F1StorageService._weather_event_to_row(session_key, row)
+                    for row in F1Service.get_weather(session_key=session_key, limit=limit)
+                )
+
+            rows = [row for row in rows if row["event_key"]]
+            if rows:
+                get_supabase().table("f1_session_events").upsert(
+                    rows,
+                    on_conflict="event_key",
+                ).execute()
+            F1StorageService._finish_ingestion_run(
+                run_id=run_id,
+                status="success",
+                records_processed=len(rows),
+            )
+            return {
+                "status": "success",
+                "source": "OpenF1",
+                "session_key": session_key,
+                "records_processed": len(rows),
+                "ingestion_run_id": run_id,
+            }
+        except Exception as e:
+            logger.error("F1 session event ingestion failed: %s", e)
+            F1StorageService._finish_ingestion_run(
+                run_id=run_id,
+                status="failed",
+                records_processed=0,
+                errors=[str(e)],
+            )
+            raise
+
+    @staticmethod
+    def ingest_driver_session_snapshots(
+        session_key: int,
+        position_limit: int = 1500,
+        lap_limit: int = 1500,
+    ) -> Dict[str, Any]:
+        run_id = F1StorageService._start_ingestion_run(
+            source_name="OpenF1",
+            ingestion_type="driver_session_snapshots",
+            metadata={
+                "session_key": session_key,
+                "position_limit": position_limit,
+                "lap_limit": lap_limit,
+            },
+        )
+        try:
+            positions = F1Service.get_position(session_key=session_key, limit=position_limit)
+            laps = F1Service.get_laps(session_key=session_key, limit=lap_limit)
+            rows = F1StorageService._driver_snapshot_rows(session_key, positions, laps)
+            if rows:
+                get_supabase().table("f1_driver_session_snapshots").upsert(
+                    rows,
+                    on_conflict="session_key,driver_number",
+                ).execute()
+            F1StorageService._finish_ingestion_run(
+                run_id=run_id,
+                status="success",
+                records_processed=len(rows),
+            )
+            return {
+                "status": "success",
+                "source": "OpenF1",
+                "session_key": session_key,
+                "records_processed": len(rows),
+                "ingestion_run_id": run_id,
+            }
+        except Exception as e:
+            logger.error("F1 driver session snapshot ingestion failed: %s", e)
             F1StorageService._finish_ingestion_run(
                 run_id=run_id,
                 status="failed",
@@ -317,6 +423,38 @@ class F1StorageService:
         return response.data or []
 
     @staticmethod
+    def list_session_events(
+        session_key: int,
+        event_type: str | None = None,
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        query = (
+            get_supabase()
+            .table("f1_session_events")
+            .select("*")
+            .eq("session_key", session_key)
+            .order("event_time", desc=True)
+            .limit(limit)
+        )
+        if event_type:
+            query = query.eq("event_type", event_type)
+        response = query.execute()
+        return response.data or []
+
+    @staticmethod
+    def list_driver_session_snapshots(session_key: int, limit: int = 100) -> List[Dict[str, Any]]:
+        response = (
+            get_supabase()
+            .table("f1_driver_session_snapshots")
+            .select("*")
+            .eq("session_key", session_key)
+            .order("latest_position")
+            .limit(limit)
+            .execute()
+        )
+        return response.data or []
+
+    @staticmethod
     def list_race_results(season: int, limit: int = 1000) -> List[Dict[str, Any]]:
         response = (
             get_supabase()
@@ -470,12 +608,137 @@ class F1StorageService:
         }
 
     @staticmethod
+    def _race_control_event_to_row(session_key: int, row: Dict[str, Any]) -> Dict[str, Any]:
+        event_time = F1StorageService._parse_openf1_datetime(row.get("date"))
+        return {
+            "session_key": session_key,
+            "event_key": F1StorageService._event_key("race_control", session_key, row),
+            "event_type": "race_control",
+            "event_time": event_time,
+            "driver_number": F1StorageService._parse_int(row.get("driver_number")),
+            "lap_number": F1StorageService._parse_int(row.get("lap_number")),
+            "category": row.get("category"),
+            "flag": row.get("flag"),
+            "scope": row.get("scope"),
+            "message": row.get("message"),
+            "value": {},
+            "source_name": "OpenF1",
+            "source_payload": row,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    @staticmethod
+    def _weather_event_to_row(session_key: int, row: Dict[str, Any]) -> Dict[str, Any]:
+        event_time = F1StorageService._parse_openf1_datetime(row.get("date"))
+        value = {
+            "air_temperature": row.get("air_temperature"),
+            "track_temperature": row.get("track_temperature"),
+            "humidity": row.get("humidity"),
+            "pressure": row.get("pressure"),
+            "rainfall": row.get("rainfall"),
+            "wind_direction": row.get("wind_direction"),
+            "wind_speed": row.get("wind_speed"),
+        }
+        return {
+            "session_key": session_key,
+            "event_key": F1StorageService._event_key("weather", session_key, row),
+            "event_type": "weather",
+            "event_time": event_time,
+            "driver_number": None,
+            "lap_number": None,
+            "category": "weather",
+            "flag": None,
+            "scope": None,
+            "message": F1StorageService._weather_message(value),
+            "value": value,
+            "source_name": "OpenF1",
+            "source_payload": row,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    @staticmethod
     def _stamp_source_row(row: Dict[str, Any]) -> Dict[str, Any]:
         stamped = dict(row)
         stamped["source_name"] = "Jolpica-F1"
         stamped["fetched_at"] = datetime.now(timezone.utc).isoformat()
         stamped["updated_at"] = datetime.now(timezone.utc).isoformat()
         return stamped
+
+    @staticmethod
+    def _driver_snapshot_rows(
+        session_key: int,
+        positions: List[Dict[str, Any]],
+        laps: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        by_driver: Dict[int, Dict[str, Any]] = {}
+
+        for position in positions:
+            driver_number = F1StorageService._parse_int(position.get("driver_number"))
+            if driver_number is None:
+                continue
+            snapshot = by_driver.setdefault(driver_number, F1StorageService._empty_driver_snapshot(session_key, driver_number))
+            event_time = F1StorageService._parse_openf1_datetime(position.get("date"))
+            if event_time and (snapshot["_latest_position_time"] is None or event_time >= snapshot["_latest_position_time"]):
+                snapshot["latest_position"] = F1StorageService._parse_int(position.get("position"))
+                snapshot["_latest_position_time"] = event_time
+                snapshot["_latest_position_payload"] = position
+            snapshot["position_samples"] += 1
+
+        for lap in laps:
+            driver_number = F1StorageService._parse_int(lap.get("driver_number"))
+            if driver_number is None:
+                continue
+            snapshot = by_driver.setdefault(driver_number, F1StorageService._empty_driver_snapshot(session_key, driver_number))
+            lap_number = F1StorageService._parse_int(lap.get("lap_number"))
+            lap_duration = F1StorageService._parse_float(lap.get("lap_duration"))
+            if lap_number is not None and (snapshot["latest_lap_number"] is None or lap_number > snapshot["latest_lap_number"]):
+                snapshot["latest_lap_number"] = lap_number
+                snapshot["_latest_lap_payload"] = lap
+            if lap_duration is not None and (snapshot["fastest_lap_duration"] is None or lap_duration < snapshot["fastest_lap_duration"]):
+                snapshot["fastest_lap_duration"] = lap_duration
+            snapshot["lap_count"] += 1
+
+        rows: List[Dict[str, Any]] = []
+        for snapshot in by_driver.values():
+            latest_position_payload = snapshot.pop("_latest_position_payload") or {}
+            latest_lap_payload = snapshot.pop("_latest_lap_payload") or {}
+            latest_position_time = snapshot.pop("_latest_position_time")
+            snapshot["metrics"] = {
+                "latest_position_at": latest_position_time,
+                "latest_lap_duration": latest_lap_payload.get("lap_duration"),
+                "duration_sector_1": latest_lap_payload.get("duration_sector_1"),
+                "duration_sector_2": latest_lap_payload.get("duration_sector_2"),
+                "duration_sector_3": latest_lap_payload.get("duration_sector_3"),
+                "i1_speed": latest_lap_payload.get("i1_speed"),
+                "i2_speed": latest_lap_payload.get("i2_speed"),
+                "st_speed": latest_lap_payload.get("st_speed"),
+            }
+            snapshot["source_payload"] = {
+                "latest_position": latest_position_payload,
+                "latest_lap": latest_lap_payload,
+            }
+            snapshot["fetched_at"] = datetime.now(timezone.utc).isoformat()
+            snapshot["updated_at"] = datetime.now(timezone.utc).isoformat()
+            rows.append(snapshot)
+
+        return rows
+
+    @staticmethod
+    def _empty_driver_snapshot(session_key: int, driver_number: int) -> Dict[str, Any]:
+        return {
+            "session_key": session_key,
+            "driver_number": driver_number,
+            "latest_position": None,
+            "latest_lap_number": None,
+            "fastest_lap_duration": None,
+            "lap_count": 0,
+            "position_samples": 0,
+            "_latest_position_time": None,
+            "_latest_position_payload": None,
+            "_latest_lap_payload": None,
+        }
 
     @staticmethod
     def _build_driver_features(
@@ -773,3 +1036,51 @@ class F1StorageService:
         if count <= 0:
             return None
         return round(float(total) / count, 4)
+
+    @staticmethod
+    def _event_key(event_type: str, session_key: int, row: Dict[str, Any]) -> str:
+        raw = json.dumps(row, sort_keys=True, separators=(",", ":"), default=str)
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+        return f"{event_type}:{session_key}:{digest}"
+
+    @staticmethod
+    def _weather_message(value: Dict[str, Any]) -> str:
+        air = value.get("air_temperature")
+        track = value.get("track_temperature")
+        rain = value.get("rainfall")
+        parts = []
+        if air is not None:
+            parts.append(f"air {air}C")
+        if track is not None:
+            parts.append(f"track {track}C")
+        if rain is not None:
+            parts.append(f"rain {rain}")
+        return ", ".join(parts)
+
+    @staticmethod
+    def _parse_openf1_datetime(value: Any) -> str | None:
+        if not value:
+            return None
+        clean_value = str(value).replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(clean_value).isoformat()
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _parse_int(value: Any) -> int | None:
+        if value is None or value == "":
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _parse_float(value: Any) -> float | None:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None

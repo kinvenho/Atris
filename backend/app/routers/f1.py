@@ -38,6 +38,7 @@ async def refresh_f1_data(
     include_results: bool = Query(default=True),
     rebuild_features: bool = Query(default=True),
     rebuild_training: bool = Query(default=True),
+    refresh_live_sessions: bool = Query(default=True),
     retrain_models: bool = Query(default=False),
     admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
 ):
@@ -49,6 +50,7 @@ async def refresh_f1_data(
             include_results=include_results,
             rebuild_features=rebuild_features,
             rebuild_training=rebuild_training,
+            refresh_live_sessions=refresh_live_sessions,
             retrain_models=retrain_models,
         )
     except ValueError:
@@ -163,6 +165,56 @@ async def ingest_f1_sessions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/ingest/sessions/{session_key}/events", response_model=Dict[str, Any])
+async def ingest_f1_session_events(
+    session_key: int,
+    include_race_control: bool = Query(default=True),
+    include_weather: bool = Query(default=True),
+    limit: int = Query(default=500, ge=1, le=1000),
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        return F1StorageService.ingest_session_events(
+            session_key=session_key,
+            include_race_control=include_race_control,
+            include_weather=include_weather,
+            limit=limit,
+        )
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail="OpenF1 returned an error")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"OpenF1 unavailable: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ingest/sessions/{session_key}/driver-snapshots", response_model=Dict[str, Any])
+async def ingest_f1_driver_session_snapshots(
+    session_key: int,
+    position_limit: int = Query(default=1500, ge=1, le=5000),
+    lap_limit: int = Query(default=1500, ge=1, le=5000),
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        return F1StorageService.ingest_driver_session_snapshots(
+            session_key=session_key,
+            position_limit=position_limit,
+            lap_limit=lap_limit,
+        )
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail="OpenF1 returned an error")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"OpenF1 unavailable: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/sessions", response_model=List[F1Session])
 async def get_f1_sessions(
     year: int | None = Query(default=None, ge=2023),
@@ -192,6 +244,33 @@ async def get_stored_f1_sessions(
 ):
     try:
         return F1StorageService.list_sessions(year, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stored/sessions/{session_key}/events", response_model=List[Dict[str, Any]])
+async def get_stored_f1_session_events(
+    session_key: int,
+    event_type: str | None = Query(default=None),
+    limit: int = Query(default=500, ge=1, le=1000),
+):
+    try:
+        if event_type and event_type not in {"race_control", "weather"}:
+            raise HTTPException(status_code=400, detail="event_type must be race_control or weather")
+        return F1StorageService.list_session_events(session_key, event_type, limit)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stored/sessions/{session_key}/driver-snapshots", response_model=List[Dict[str, Any]])
+async def get_stored_f1_driver_session_snapshots(
+    session_key: int,
+    limit: int = Query(default=100, ge=1, le=250),
+):
+    try:
+        return F1StorageService.list_driver_session_snapshots(session_key, limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
