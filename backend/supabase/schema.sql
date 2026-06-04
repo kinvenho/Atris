@@ -219,6 +219,51 @@ create table if not exists public.f1_driver_season_features (
     unique (season, driver_id)
 );
 
+create table if not exists public.f1_constructor_season_features (
+    id uuid primary key default gen_random_uuid(),
+    season integer not null,
+    constructor_id text not null,
+    constructor_name text,
+    starts integer not null default 0,
+    driver_count integer not null default 0,
+    points numeric not null default 0,
+    wins integer not null default 0,
+    podiums integer not null default 0,
+    points_finishes integer not null default 0,
+    dnfs integer not null default 0,
+    poles integer not null default 0,
+    q3_appearances integer not null default 0,
+    avg_finish_position numeric,
+    avg_grid_position numeric,
+    avg_qualifying_position numeric,
+    points_per_start numeric,
+    podium_rate numeric,
+    points_finish_rate numeric,
+    dnf_rate numeric,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (season, constructor_id)
+);
+
+create table if not exists public.f1_model_training_examples (
+    id uuid primary key default gen_random_uuid(),
+    season integer not null,
+    round integer not null,
+    race_name text,
+    driver_id text not null,
+    driver_code text,
+    constructor_id text,
+    constructor_name text,
+    outcome_type text not null check (outcome_type in ('points_finish', 'podium_finish')),
+    label boolean not null,
+    feature_set text not null default 'pre_race_v1',
+    features jsonb not null,
+    source_result jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (season, round, driver_id, outcome_type, feature_set)
+);
+
 create table if not exists public.f1_market_links (
     id uuid primary key default gen_random_uuid(),
     market_id uuid references public.markets(id) on delete cascade,
@@ -308,6 +353,15 @@ create index if not exists f1_qualifying_results_driver_idx
 create index if not exists f1_driver_season_features_points_idx
     on public.f1_driver_season_features (season, points desc);
 
+create index if not exists f1_constructor_season_features_points_idx
+    on public.f1_constructor_season_features (season, points desc);
+
+create index if not exists f1_model_training_examples_season_outcome_idx
+    on public.f1_model_training_examples (season, outcome_type);
+
+create index if not exists f1_model_training_examples_driver_idx
+    on public.f1_model_training_examples (driver_id, season);
+
 create index if not exists f1_market_links_polymarket_id_idx
     on public.f1_market_links (polymarket_id);
 
@@ -347,6 +401,8 @@ alter table public.f1_sessions enable row level security;
 alter table public.f1_race_results enable row level security;
 alter table public.f1_qualifying_results enable row level security;
 alter table public.f1_driver_season_features enable row level security;
+alter table public.f1_constructor_season_features enable row level security;
+alter table public.f1_model_training_examples enable row level security;
 alter table public.f1_market_links enable row level security;
 alter table public.f1_feature_snapshots enable row level security;
 alter table public.f1_model_versions enable row level security;

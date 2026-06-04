@@ -254,3 +254,58 @@ async def get_f1_driver_season_features(
         return F1StorageService.list_driver_season_features(season, limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/features/seasons/{season}/constructors/build", response_model=Dict[str, Any])
+async def build_f1_constructor_season_features(
+    season: int,
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        return F1StorageService.build_constructor_season_features(season)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/features/seasons/{season}/constructors", response_model=List[Dict[str, Any]])
+async def get_f1_constructor_season_features(
+    season: int,
+    limit: int = Query(default=100, ge=1, le=250),
+):
+    try:
+        return F1StorageService.list_constructor_season_features(season, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/training/seasons/{season}/examples/build", response_model=Dict[str, Any])
+async def build_f1_training_examples(
+    season: int,
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        return F1StorageService.build_training_examples(season)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/training/seasons/{season}/examples", response_model=List[Dict[str, Any]])
+async def get_f1_training_examples(
+    season: int,
+    outcome_type: str | None = Query(default=None),
+    limit: int = Query(default=1000, ge=1, le=2000),
+):
+    try:
+        if outcome_type and outcome_type not in {"points_finish", "podium_finish"}:
+            raise HTTPException(status_code=400, detail="outcome_type must be points_finish or podium_finish")
+        return F1StorageService.list_training_examples(season, outcome_type, limit)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
