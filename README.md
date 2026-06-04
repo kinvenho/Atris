@@ -8,13 +8,19 @@
 
 # Atris
 
-Atris is an autonomous market-research backend for Polymarket. It scans active binary markets, gathers current context with Grok web search, estimates Atris' probability of resolution, publishes recommendations when the edge clears configured thresholds, and tracks outcomes over time.
+Atris is becoming a Formula 1 data, analytics, and prediction backend for prediction markets.
 
-The first production version is intentionally narrow: no accounts, no alerts, no wallet connection, no trade execution, and no portfolio features. Atris V1 is the agent pipeline, database model, API, cron jobs, and a baseline frontend.
+The core thesis is simple: F1 is structured enough that the strongest product is not an AI news summarizer. Atris should ingest historical and live race-weekend data, build model-ready features, produce calibrated probabilities, and compare those probabilities against market-implied prices.
+
+The current generic Polymarket agent remains in the codebase, but the product direction is now F1-first:
+
+```txt
+F1DataIngestion -> FeatureStore -> PredictionModel -> ProbabilityAPI -> MarketEdgeEngine
+```
 
 ## Status
 
-Atris V1 backend is deployed on Railway in the reference deployment and writes to Supabase.
+Atris V1 backend is deployed on Railway in the reference deployment and writes to Supabase. The deployed service currently runs the original generic Polymarket research loop while the F1 data and prediction layer is designed and implemented.
 
 Recent production runner jobs have completed successfully with:
 
@@ -26,7 +32,7 @@ status: success
 
 ## What Atris Does
 
-Atris runs this loop:
+The existing generic agent runs this loop:
 
 ```txt
 MarketScanner -> ContextGatherer -> ProbabilityEngine -> DecisionEngine -> RecommendationWriter
@@ -43,6 +49,55 @@ The agent:
 - Computes the edge against market-implied probabilities.
 - Publishes only when edge and confidence pass thresholds.
 - Stores recommendations, evidence, run history, and performance snapshots in Supabase.
+
+The F1 product path will replace AI-first probability generation with a data/model-first system:
+
+- Build a historical F1 warehouse from structured sources.
+- Ingest live race-weekend state where practical.
+- Generate features for drivers, constructors, circuits, sessions, tires, weather, gaps, pace, penalties, and race-control events.
+- Train calibrated models for outcome families such as podium, points finish, race winner, head-to-head, fastest lap, DNF, and safety car.
+- Compare model probabilities against Polymarket and later Kalshi market prices.
+- Store prediction snapshots with model version, source provenance, and market-edge metadata.
+
+## F1 Data Strategy
+
+Atris should start historical and expand into live data carefully.
+
+Primary data sources under evaluation:
+
+- [F1DB](https://github.com/f1db/f1db): local historical database seed with CSV, JSON, SQL, and SQLite artifacts.
+- [Jolpica-F1](https://github.com/jolpica/jolpica-f1): Ergast-compatible historical API for schedules, standings, qualifying, races, laps, pit stops, sprint, and results.
+- [FastF1](https://github.com/theOehrly/Fast-F1): Python package for timing, telemetry, session loading, and offline feature generation.
+- [OpenF1](https://openf1.org/docs/): historical and real-time F1 API. Historical data is useful immediately; real-time access may require paid access.
+- FastF1 live timing / Formula 1 SignalR-derived tooling: potential path to record live sessions into Atris' own server-side feed if we need to avoid depending on a paid live API.
+
+Storage should stay efficient enough for the Supabase free plan during early development:
+
+- Store normalized canonical entities and compact feature snapshots first.
+- Keep raw high-frequency telemetry out of Supabase by default.
+- Store heavy raw/replay files in local object storage, Supabase Storage, or an external bucket only when needed.
+- Use append-only live-event summaries instead of writing every raw car-data tick to Postgres.
+
+## F1 Roadmap
+
+Near-term:
+
+- Seed historical F1 data.
+- Add F1 market classification.
+- Design efficient Supabase tables for entities, sessions, features, predictions, and market-edge snapshots.
+- Build the first model around all high-signal outcome families, starting with the easiest to evaluate historically.
+
+Race-weekend:
+
+- Add scheduled race-weekend ingestion.
+- Record or consume live timing, race-control, weather, position, pit, tire, and gap data.
+- Update prediction snapshots as session state changes.
+
+Later:
+
+- Add a full F1 stats and prediction page.
+- Add Kalshi support for cross-market pricing.
+- Add an explanation layer after model probabilities are already generated.
 
 ## Architecture
 
@@ -192,6 +247,8 @@ Core tables:
 - `performance_snapshots`
 
 `recommendation_evidence` is kept even if not surfaced in the UI. It is the audit trail for recommendation context.
+
+The planned F1 data model should keep early storage compact enough for the Supabase free plan by storing canonical data, feature snapshots, prediction snapshots, and market-edge snapshots instead of raw high-frequency telemetry.
 
 ## Railway Deployment
 
