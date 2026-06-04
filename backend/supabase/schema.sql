@@ -72,8 +72,180 @@ create index if not exists agent_runs_started_at_idx
 create index if not exists idx_performance_snapshots_snapshot_at
     on public.performance_snapshots (snapshot_at desc);
 
+create table if not exists public.f1_sources (
+    id uuid primary key default gen_random_uuid(),
+    name text not null unique,
+    kind text not null check (kind in ('historical', 'live', 'analysis', 'market')),
+    status text not null check (status in ('ready', 'evaluating', 'roadmap')),
+    access text not null,
+    role text not null,
+    notes text not null,
+    url text not null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists public.f1_ingestion_runs (
+    id uuid primary key default gen_random_uuid(),
+    source_name text not null,
+    ingestion_type text not null,
+    started_at timestamptz not null default now(),
+    completed_at timestamptz,
+    status text not null check (status in ('success', 'partial', 'failed')),
+    records_processed integer not null default 0,
+    errors jsonb not null default '[]'::jsonb,
+    metadata jsonb not null default '{}'::jsonb
+);
+
+create table if not exists public.f1_races (
+    id uuid primary key default gen_random_uuid(),
+    season integer not null,
+    round integer not null,
+    race_name text not null,
+    circuit_name text not null,
+    locality text,
+    country text,
+    race_date date,
+    race_time text,
+    source_name text not null default 'Jolpica-F1',
+    source_payload jsonb not null default '{}'::jsonb,
+    fetched_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (season, round)
+);
+
+create table if not exists public.f1_sessions (
+    id uuid primary key default gen_random_uuid(),
+    session_key integer not null unique,
+    meeting_key integer not null,
+    year integer not null,
+    session_name text not null,
+    session_type text not null,
+    country_name text,
+    location text,
+    circuit_short_name text,
+    date_start timestamptz,
+    date_end timestamptz,
+    source_name text not null default 'OpenF1',
+    source_payload jsonb not null default '{}'::jsonb,
+    fetched_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists public.f1_market_links (
+    id uuid primary key default gen_random_uuid(),
+    market_id uuid references public.markets(id) on delete cascade,
+    polymarket_id text,
+    domain text not null default 'f1',
+    entity_type text,
+    entity_key text,
+    outcome_type text,
+    confidence numeric not null default 0 check (confidence >= 0 and confidence <= 1),
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now()
+);
+
+create table if not exists public.f1_feature_snapshots (
+    id uuid primary key default gen_random_uuid(),
+    market_id uuid references public.markets(id) on delete cascade,
+    session_key integer references public.f1_sessions(session_key) on delete set null,
+    feature_set text not null,
+    features jsonb not null,
+    source_freshness jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now()
+);
+
+create table if not exists public.f1_model_versions (
+    id uuid primary key default gen_random_uuid(),
+    model_name text not null,
+    outcome_type text not null,
+    version text not null,
+    status text not null default 'candidate' check (status in ('candidate', 'active', 'retired')),
+    training_window jsonb not null default '{}'::jsonb,
+    feature_schema jsonb not null default '{}'::jsonb,
+    metrics jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    unique (model_name, version)
+);
+
+create table if not exists public.f1_model_predictions (
+    id uuid primary key default gen_random_uuid(),
+    model_version_id uuid references public.f1_model_versions(id) on delete set null,
+    market_id uuid references public.markets(id) on delete cascade,
+    feature_snapshot_id uuid references public.f1_feature_snapshots(id) on delete set null,
+    outcome_type text not null,
+    subject text not null,
+    probability numeric not null check (probability >= 0 and probability <= 1),
+    confidence numeric not null default 0 check (confidence >= 0 and confidence <= 1),
+    prediction_mode text not null check (prediction_mode in ('pre_race', 'race_weekend', 'live_race')),
+    explanation jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now()
+);
+
+create table if not exists public.f1_market_edge_snapshots (
+    id uuid primary key default gen_random_uuid(),
+    prediction_id uuid references public.f1_model_predictions(id) on delete cascade,
+    market_id uuid references public.markets(id) on delete cascade,
+    polymarket_id text,
+    model_probability numeric not null check (model_probability >= 0 and model_probability <= 1),
+    market_probability numeric not null check (market_probability >= 0 and market_probability <= 1),
+    edge numeric not null,
+    liquidity numeric,
+    volume numeric,
+    spread numeric,
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists f1_ingestion_runs_started_at_idx
+    on public.f1_ingestion_runs (started_at desc);
+
+create index if not exists f1_races_season_date_idx
+    on public.f1_races (season, race_date);
+
+create index if not exists f1_sessions_year_type_idx
+    on public.f1_sessions (year, session_type, date_start);
+
+create index if not exists f1_market_links_polymarket_id_idx
+    on public.f1_market_links (polymarket_id);
+
+create index if not exists f1_market_links_market_id_idx
+    on public.f1_market_links (market_id);
+
+create index if not exists f1_feature_snapshots_market_created_idx
+    on public.f1_feature_snapshots (market_id, created_at desc);
+
+create index if not exists f1_feature_snapshots_session_key_idx
+    on public.f1_feature_snapshots (session_key);
+
+create index if not exists f1_model_predictions_market_created_idx
+    on public.f1_model_predictions (market_id, created_at desc);
+
+create index if not exists f1_model_predictions_model_version_id_idx
+    on public.f1_model_predictions (model_version_id);
+
+create index if not exists f1_model_predictions_feature_snapshot_id_idx
+    on public.f1_model_predictions (feature_snapshot_id);
+
+create index if not exists f1_market_edge_snapshots_market_created_idx
+    on public.f1_market_edge_snapshots (market_id, created_at desc);
+
+create index if not exists f1_market_edge_snapshots_prediction_id_idx
+    on public.f1_market_edge_snapshots (prediction_id);
+
 alter table public.markets enable row level security;
 alter table public.recommendations enable row level security;
 alter table public.recommendation_evidence enable row level security;
 alter table public.agent_runs enable row level security;
 alter table public.performance_snapshots enable row level security;
+alter table public.f1_sources enable row level security;
+alter table public.f1_ingestion_runs enable row level security;
+alter table public.f1_races enable row level security;
+alter table public.f1_sessions enable row level security;
+alter table public.f1_market_links enable row level security;
+alter table public.f1_feature_snapshots enable row level security;
+alter table public.f1_model_versions enable row level security;
+alter table public.f1_model_predictions enable row level security;
+alter table public.f1_market_edge_snapshots enable row level security;

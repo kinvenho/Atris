@@ -4,7 +4,7 @@ from app.config import get_cors_origins
 
 app = FastAPI(
     title="Atris API",
-    description="Atris Market Scanner & Probability Engine API",
+    description="Atris F1 Prediction Market Analytics API",
     version="1.0.0"
 )
 
@@ -26,12 +26,14 @@ async def root():
     }
 
 from app.routers import recommendations, agent
+from app.routers import f1
 from app.services.scoring_service import ScoringService
 from fastapi import HTTPException
 
 # Register routers
 app.include_router(recommendations.router, prefix="/recommendations", tags=["Recommendations"])
 app.include_router(agent.router, prefix="/agent", tags=["Agent"])
+app.include_router(f1.router, prefix="/f1", tags=["Formula 1"])
 
 @app.get("/performance")
 async def get_performance_snapshot():

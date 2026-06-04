@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     PIPELINE_CADENCE_MINUTES: int = 45
     OUTCOME_CHECK_CADENCE_MINUTES: int = 120
 
+    # F1 Data Settings
+    JOLPICA_BASE_URL: str = "https://api.jolpi.ca/ergast/f1"
+    OPENF1_BASE_URL: str = "https://api.openf1.org/v1"
+    F1_HTTP_TIMEOUT_SECONDS: float = 20.0
+
     # Load from .env file if it exists
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
