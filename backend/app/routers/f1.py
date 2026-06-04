@@ -165,3 +165,92 @@ async def get_stored_f1_sessions(
         return F1StorageService.list_sessions(year, limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ingest/seasons/{season}/race-results", response_model=Dict[str, Any])
+async def ingest_f1_race_results(
+    season: str,
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        normalized_season: int | str = "current" if season == "current" else int(season)
+        return F1StorageService.ingest_race_results(normalized_season)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="season must be a year or 'current'")
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail="F1 race results source returned an error")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"F1 race results source unavailable: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ingest/seasons/{season}/qualifying-results", response_model=Dict[str, Any])
+async def ingest_f1_qualifying_results(
+    season: str,
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        normalized_season: int | str = "current" if season == "current" else int(season)
+        return F1StorageService.ingest_qualifying_results(normalized_season)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="season must be a year or 'current'")
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail="F1 qualifying results source returned an error")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"F1 qualifying results source unavailable: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/features/seasons/{season}/drivers/build", response_model=Dict[str, Any])
+async def build_f1_driver_season_features(
+    season: int,
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        return F1StorageService.build_driver_season_features(season)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stored/seasons/{season}/race-results", response_model=List[Dict[str, Any]])
+async def get_stored_f1_race_results(
+    season: int,
+    limit: int = Query(default=1000, ge=1, le=1000),
+):
+    try:
+        return F1StorageService.list_race_results(season, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stored/seasons/{season}/qualifying-results", response_model=List[Dict[str, Any]])
+async def get_stored_f1_qualifying_results(
+    season: int,
+    limit: int = Query(default=1000, ge=1, le=1000),
+):
+    try:
+        return F1StorageService.list_qualifying_results(season, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/features/seasons/{season}/drivers", response_model=List[Dict[str, Any]])
+async def get_f1_driver_season_features(
+    season: int,
+    limit: int = Query(default=100, ge=1, le=250),
+):
+    try:
+        return F1StorageService.list_driver_season_features(season, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

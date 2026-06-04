@@ -134,6 +134,91 @@ create table if not exists public.f1_sessions (
     updated_at timestamptz not null default now()
 );
 
+create table if not exists public.f1_race_results (
+    id uuid primary key default gen_random_uuid(),
+    season integer not null,
+    round integer not null,
+    race_name text,
+    driver_id text not null,
+    driver_code text,
+    driver_number text,
+    given_name text,
+    family_name text,
+    constructor_id text,
+    constructor_name text,
+    grid integer,
+    position integer,
+    position_text text,
+    position_order integer,
+    points numeric not null default 0,
+    laps integer,
+    status text,
+    race_time text,
+    fastest_lap_rank integer,
+    fastest_lap_time text,
+    source_name text not null default 'Jolpica-F1',
+    source_payload jsonb not null default '{}'::jsonb,
+    fetched_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (season, round, driver_id)
+);
+
+create table if not exists public.f1_qualifying_results (
+    id uuid primary key default gen_random_uuid(),
+    season integer not null,
+    round integer not null,
+    race_name text,
+    driver_id text not null,
+    driver_code text,
+    driver_number text,
+    given_name text,
+    family_name text,
+    constructor_id text,
+    constructor_name text,
+    qualifying_position integer,
+    q1 text,
+    q2 text,
+    q3 text,
+    source_name text not null default 'Jolpica-F1',
+    source_payload jsonb not null default '{}'::jsonb,
+    fetched_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (season, round, driver_id)
+);
+
+create table if not exists public.f1_driver_season_features (
+    id uuid primary key default gen_random_uuid(),
+    season integer not null,
+    driver_id text not null,
+    driver_code text,
+    driver_number text,
+    given_name text,
+    family_name text,
+    constructor_id text,
+    constructor_name text,
+    starts integer not null default 0,
+    qualifying_sessions integer not null default 0,
+    points numeric not null default 0,
+    wins integer not null default 0,
+    podiums integer not null default 0,
+    points_finishes integer not null default 0,
+    dnfs integer not null default 0,
+    poles integer not null default 0,
+    q3_appearances integer not null default 0,
+    avg_finish_position numeric,
+    avg_grid_position numeric,
+    avg_qualifying_position numeric,
+    points_per_start numeric,
+    podium_rate numeric,
+    points_finish_rate numeric,
+    dnf_rate numeric,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (season, driver_id)
+);
+
 create table if not exists public.f1_market_links (
     id uuid primary key default gen_random_uuid(),
     market_id uuid references public.markets(id) on delete cascade,
@@ -208,6 +293,21 @@ create index if not exists f1_races_season_date_idx
 create index if not exists f1_sessions_year_type_idx
     on public.f1_sessions (year, session_type, date_start);
 
+create index if not exists f1_race_results_season_round_idx
+    on public.f1_race_results (season, round, position_order);
+
+create index if not exists f1_race_results_driver_idx
+    on public.f1_race_results (driver_id, season);
+
+create index if not exists f1_qualifying_results_season_round_idx
+    on public.f1_qualifying_results (season, round, qualifying_position);
+
+create index if not exists f1_qualifying_results_driver_idx
+    on public.f1_qualifying_results (driver_id, season);
+
+create index if not exists f1_driver_season_features_points_idx
+    on public.f1_driver_season_features (season, points desc);
+
 create index if not exists f1_market_links_polymarket_id_idx
     on public.f1_market_links (polymarket_id);
 
@@ -244,6 +344,9 @@ alter table public.f1_sources enable row level security;
 alter table public.f1_ingestion_runs enable row level security;
 alter table public.f1_races enable row level security;
 alter table public.f1_sessions enable row level security;
+alter table public.f1_race_results enable row level security;
+alter table public.f1_qualifying_results enable row level security;
+alter table public.f1_driver_season_features enable row level security;
 alter table public.f1_market_links enable row level security;
 alter table public.f1_feature_snapshots enable row level security;
 alter table public.f1_model_versions enable row level security;

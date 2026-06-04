@@ -93,6 +93,14 @@ class F1Service:
         return JolpicaClient().fetch_schedule(season)
 
     @staticmethod
+    def get_race_results(season: int | str = "current") -> List[dict]:
+        return JolpicaClient().fetch_race_results(season)
+
+    @staticmethod
+    def get_qualifying_results(season: int | str = "current") -> List[dict]:
+        return JolpicaClient().fetch_qualifying_results(season)
+
+    @staticmethod
     def get_upcoming_races(season: int | str = "current", limit: int = 5) -> List[F1Race]:
         schedule = F1Service.get_schedule(season)
         today = date.today()
