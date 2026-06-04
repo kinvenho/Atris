@@ -107,7 +107,7 @@ class JolpicaClient:
                     "grid": self._parse_int(result.get("grid")),
                     "position": self._parse_int(result.get("position")),
                     "position_text": result.get("positionText"),
-                    "position_order": self._parse_int(result.get("positionOrder")),
+                    "position_order": self._parse_int(result.get("positionOrder")) or self._parse_int(result.get("position")),
                     "points": self._parse_float(result.get("points")),
                     "laps": self._parse_int(result.get("laps")),
                     "status": result.get("status"),
