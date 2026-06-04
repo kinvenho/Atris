@@ -314,6 +314,26 @@ create table if not exists public.f1_model_predictions (
     created_at timestamptz not null default now()
 );
 
+create table if not exists public.f1_model_backtest_predictions (
+    id uuid primary key default gen_random_uuid(),
+    model_version_id uuid references public.f1_model_versions(id) on delete cascade,
+    season integer not null,
+    round integer not null,
+    race_name text,
+    driver_id text not null,
+    driver_code text,
+    constructor_id text,
+    outcome_type text not null check (outcome_type in ('points_finish', 'podium_finish')),
+    label boolean not null,
+    probability numeric not null check (probability >= 0 and probability <= 1),
+    predicted_label boolean not null,
+    feature_set text not null,
+    split text not null check (split in ('train', 'eval')),
+    features jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    unique (model_version_id, season, round, driver_id, outcome_type, feature_set)
+);
+
 create table if not exists public.f1_market_edge_snapshots (
     id uuid primary key default gen_random_uuid(),
     prediction_id uuid references public.f1_model_predictions(id) on delete cascade,
@@ -383,6 +403,12 @@ create index if not exists f1_model_predictions_model_version_id_idx
 create index if not exists f1_model_predictions_feature_snapshot_id_idx
     on public.f1_model_predictions (feature_snapshot_id);
 
+create index if not exists f1_model_backtest_predictions_model_idx
+    on public.f1_model_backtest_predictions (model_version_id);
+
+create index if not exists f1_model_backtest_predictions_season_outcome_idx
+    on public.f1_model_backtest_predictions (season, outcome_type, round);
+
 create index if not exists f1_market_edge_snapshots_market_created_idx
     on public.f1_market_edge_snapshots (market_id, created_at desc);
 
@@ -407,4 +433,5 @@ alter table public.f1_market_links enable row level security;
 alter table public.f1_feature_snapshots enable row level security;
 alter table public.f1_model_versions enable row level security;
 alter table public.f1_model_predictions enable row level security;
+alter table public.f1_model_backtest_predictions enable row level security;
 alter table public.f1_market_edge_snapshots enable row level security;

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, HTTPException, Query
 
 from app.models.f1 import F1DataSource, F1LiveReadiness, F1Race, F1SeasonSchedule, F1Session
 from app.config import settings
+from app.services.f1_model_service import F1ModelService
 from app.services.f1_service import F1Service
 from app.services.f1_storage_service import F1StorageService
 
@@ -305,6 +306,59 @@ async def get_f1_training_examples(
         if outcome_type and outcome_type not in {"points_finish", "podium_finish"}:
             raise HTTPException(status_code=400, detail="outcome_type must be points_finish or podium_finish")
         return F1StorageService.list_training_examples(season, outcome_type, limit)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/models/seasons/{season}/{outcome_type}/train", response_model=Dict[str, Any])
+async def train_f1_baseline_model(
+    season: int,
+    outcome_type: str,
+    eval_start_round: int = Query(default=19, ge=2, le=30),
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        return F1ModelService.train_baseline(
+            season=season,
+            outcome_type=outcome_type,
+            eval_start_round=eval_start_round,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/models/versions", response_model=List[Dict[str, Any]])
+async def get_f1_model_versions(
+    outcome_type: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    try:
+        if outcome_type and outcome_type not in {"points_finish", "podium_finish"}:
+            raise HTTPException(status_code=400, detail="outcome_type must be points_finish or podium_finish")
+        return F1ModelService.list_model_versions(outcome_type, limit)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/models/seasons/{season}/backtest", response_model=List[Dict[str, Any]])
+async def get_f1_backtest_predictions(
+    season: int,
+    outcome_type: str | None = Query(default=None),
+    limit: int = Query(default=1000, ge=1, le=2000),
+):
+    try:
+        if outcome_type and outcome_type not in {"points_finish", "podium_finish"}:
+            raise HTTPException(status_code=400, detail="outcome_type must be points_finish or podium_finish")
+        return F1ModelService.list_backtest_predictions(season, outcome_type, limit)
     except HTTPException:
         raise
     except Exception as e:
