@@ -363,3 +363,26 @@ async def get_f1_backtest_predictions(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/predictions/seasons/{season}/rounds/{round_number}", response_model=Dict[str, Any])
+async def get_f1_race_predictions(
+    season: int,
+    round_number: int,
+):
+    try:
+        return F1ModelService.predict_race(season, round_number)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/predictions/seasons/{season}/rounds/{round_number}/drivers/{driver_id}", response_model=Dict[str, Any])
+async def get_f1_driver_prediction(
+    season: int,
+    round_number: int,
+    driver_id: str,
+):
+    try:
+        return F1ModelService.predict_driver(season, round_number, driver_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

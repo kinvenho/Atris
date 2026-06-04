@@ -157,6 +157,83 @@ class F1ModelService:
         return response.data or []
 
     @staticmethod
+    def predict_race(season: int, round_number: int) -> Dict[str, Any]:
+        points_model = F1ModelService._active_model_version("points_finish")
+        podium_model = F1ModelService._active_model_version("podium_finish")
+        points_examples = F1StorageService.list_training_examples(
+            season=season,
+            outcome_type="points_finish",
+            limit=2000,
+        )
+        podium_examples = F1StorageService.list_training_examples(
+            season=season,
+            outcome_type="podium_finish",
+            limit=2000,
+        )
+        points_by_driver = {
+            row["driver_id"]: row
+            for row in points_examples
+            if int(row["round"]) == round_number
+        }
+        podium_by_driver = {
+            row["driver_id"]: row
+            for row in podium_examples
+            if int(row["round"]) == round_number
+        }
+        if not points_by_driver:
+            raise RuntimeError("No training feature rows found for season/round")
+
+        predictions = []
+        for driver_id, points_row in sorted(points_by_driver.items(), key=lambda item: F1ModelService._sort_grid(item[1])):
+            podium_row = podium_by_driver.get(driver_id)
+            points_prediction = F1ModelService._predict_from_model(points_model, points_row)
+            podium_prediction = F1ModelService._predict_from_model(podium_model, podium_row or points_row)
+            features = points_row.get("features") or {}
+            predictions.append({
+                "season": season,
+                "round": round_number,
+                "race_name": points_row.get("race_name"),
+                "driver_id": driver_id,
+                "driver_code": points_row.get("driver_code"),
+                "constructor_id": points_row.get("constructor_id"),
+                "constructor_name": points_row.get("constructor_name"),
+                "grid": features.get("grid"),
+                "qualifying_position": features.get("qualifying_position"),
+                "q3": features.get("q3"),
+                "points_finish_probability": points_prediction["probability"],
+                "podium_finish_probability": podium_prediction["probability"],
+                "points_finish_label": points_row.get("label"),
+                "podium_finish_label": podium_row.get("label") if podium_row else None,
+                "source_result": points_row.get("source_result") or {},
+            })
+
+        return {
+            "season": season,
+            "round": round_number,
+            "race_name": predictions[0]["race_name"] if predictions else None,
+            "prediction_mode": "pre_race",
+            "feature_set": "pre_race_v1",
+            "models": {
+                "points_finish": F1ModelService._model_summary(points_model),
+                "podium_finish": F1ModelService._model_summary(podium_model),
+            },
+            "predictions": predictions,
+        }
+
+    @staticmethod
+    def predict_driver(season: int, round_number: int, driver_id: str) -> Dict[str, Any]:
+        board = F1ModelService.predict_race(season, round_number)
+        for prediction in board["predictions"]:
+            if prediction["driver_id"] == driver_id:
+                return {
+                    **prediction,
+                    "prediction_mode": board["prediction_mode"],
+                    "feature_set": board["feature_set"],
+                    "models": board["models"],
+                }
+        raise RuntimeError("No prediction found for driver in season/round")
+
+    @staticmethod
     def _upsert_model_version(payload: Dict[str, Any]) -> Dict[str, Any]:
         response = (
             get_supabase()
@@ -179,6 +256,62 @@ class F1ModelService:
         if not fallback.data:
             raise RuntimeError("Failed to upsert F1 model version")
         return fallback.data[0]
+
+    @staticmethod
+    def _active_model_version(outcome_type: str) -> Dict[str, Any]:
+        response = (
+            get_supabase()
+            .table("f1_model_versions")
+            .select("*")
+            .eq("model_name", "logistic_pre_race_v1")
+            .eq("outcome_type", outcome_type)
+            .eq("status", "active")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not response.data:
+            raise RuntimeError(f"No active F1 model version found for {outcome_type}")
+        return response.data[0]
+
+    @staticmethod
+    def _predict_from_model(model_version: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
+        feature_schema = model_version.get("feature_schema") or {}
+        means = feature_schema.get("means") or []
+        scales = feature_schema.get("scales") or []
+        coefficients = feature_schema.get("coefficients") or []
+        intercept = float(feature_schema.get("intercept") or 0)
+        if not means or not scales or not coefficients:
+            raise RuntimeError("Model version is missing feature schema parameters")
+
+        raw_features = F1ModelService._feature_vector(row)
+        scaled_features = F1ModelService._scale(raw_features, means, scales)
+        probability = F1ModelService._predict_probability(scaled_features, coefficients, intercept)
+        return {
+            "probability": round(probability, 8),
+            "model_version_id": model_version["id"],
+            "version": model_version["version"],
+        }
+
+    @staticmethod
+    def _model_summary(model_version: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "id": model_version["id"],
+            "model_name": model_version["model_name"],
+            "version": model_version["version"],
+            "outcome_type": model_version["outcome_type"],
+            "metrics": model_version.get("metrics") or {},
+        }
+
+    @staticmethod
+    def _sort_grid(row: Dict[str, Any]) -> tuple[int, str]:
+        features = row.get("features") or {}
+        grid = features.get("grid")
+        try:
+            grid_value = int(grid)
+        except (TypeError, ValueError):
+            grid_value = 99
+        return grid_value, str(row.get("driver_id") or "")
 
     @staticmethod
     def _feature_vector(row: Dict[str, Any]) -> List[float]:
