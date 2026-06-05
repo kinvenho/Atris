@@ -71,6 +71,14 @@ class F1RefreshService:
                         session_key=session_key,
                     ),
                 )
+                F1RefreshService._run_step(
+                    steps,
+                    f"build_session_predictions:{session_key}",
+                    lambda session_key=session_key: F1ModelService.predict_session(
+                        session_key=session_key,
+                        persist=True,
+                    ),
+                )
 
         if include_results:
             F1RefreshService._run_step(

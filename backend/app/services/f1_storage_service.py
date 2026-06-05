@@ -567,6 +567,69 @@ class F1StorageService:
         return response.data or []
 
     @staticmethod
+    def get_session_race_link(session_key: int) -> Dict[str, Any] | None:
+        response = (
+            get_supabase()
+            .table("f1_session_race_links")
+            .select("*")
+            .eq("session_key", session_key)
+            .limit(1)
+            .execute()
+        )
+        if not response.data:
+            return None
+        return response.data[0]
+
+    @staticmethod
+    def upsert_model_predictions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not rows:
+            return []
+        response = (
+            get_supabase()
+            .table("f1_model_predictions")
+            .upsert(
+                rows,
+                on_conflict="feature_snapshot_id,outcome_type,subject,prediction_mode",
+            )
+            .execute()
+        )
+        return response.data or []
+
+    @staticmethod
+    def delete_model_predictions_for_feature_snapshots(
+        feature_snapshot_ids: List[str],
+        prediction_mode: str,
+    ) -> None:
+        if not feature_snapshot_ids:
+            return
+        (
+            get_supabase()
+            .table("f1_model_predictions")
+            .delete()
+            .in_("feature_snapshot_id", feature_snapshot_ids)
+            .eq("prediction_mode", prediction_mode)
+            .execute()
+        )
+
+    @staticmethod
+    def list_model_predictions_for_feature_snapshots(
+        feature_snapshot_ids: List[str],
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        if not feature_snapshot_ids:
+            return []
+        response = (
+            get_supabase()
+            .table("f1_model_predictions")
+            .select("*")
+            .in_("feature_snapshot_id", feature_snapshot_ids)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return response.data or []
+
+    @staticmethod
     def list_race_results(season: int, limit: int = 1000) -> List[Dict[str, Any]]:
         response = (
             get_supabase()

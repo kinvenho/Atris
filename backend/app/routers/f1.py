@@ -331,6 +331,30 @@ async def get_f1_session_feature_snapshots(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/predictions/sessions/{session_key}/build", response_model=Dict[str, Any])
+async def build_f1_session_predictions(
+    session_key: int,
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        return F1ModelService.predict_session(session_key=session_key, persist=True)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/predictions/sessions/{session_key}", response_model=Dict[str, Any])
+async def get_f1_session_predictions(
+    session_key: int,
+):
+    try:
+        return F1ModelService.predict_session(session_key=session_key, persist=False)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/ingest/seasons/{season}/race-results", response_model=Dict[str, Any])
 async def ingest_f1_race_results(
     season: str,

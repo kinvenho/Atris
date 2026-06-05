@@ -371,7 +371,9 @@ create table if not exists public.f1_model_predictions (
     confidence numeric not null default 0 check (confidence >= 0 and confidence <= 1),
     prediction_mode text not null check (prediction_mode in ('pre_race', 'race_weekend', 'live_race')),
     explanation jsonb not null default '{}'::jsonb,
-    created_at timestamptz not null default now()
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (feature_snapshot_id, outcome_type, subject, prediction_mode)
 );
 
 create table if not exists public.f1_model_backtest_predictions (
@@ -480,6 +482,9 @@ create index if not exists f1_model_predictions_model_version_id_idx
 
 create index if not exists f1_model_predictions_feature_snapshot_id_idx
     on public.f1_model_predictions (feature_snapshot_id);
+
+create index if not exists f1_model_predictions_subject_idx
+    on public.f1_model_predictions (subject, created_at desc);
 
 create index if not exists f1_model_backtest_predictions_model_idx
     on public.f1_model_backtest_predictions (model_version_id);

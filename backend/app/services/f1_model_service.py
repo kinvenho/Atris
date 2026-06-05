@@ -7,6 +7,28 @@ from app.services.supabase_client import get_supabase
 
 
 class F1ModelService:
+    DRIVER_ID_BY_CAR_NUMBER = {
+        "1": "max_verstappen",
+        "2": "sargeant",
+        "3": "ricciardo",
+        "4": "norris",
+        "10": "gasly",
+        "11": "perez",
+        "14": "alonso",
+        "16": "leclerc",
+        "18": "stroll",
+        "20": "kevin_magnussen",
+        "22": "tsunoda",
+        "23": "albon",
+        "24": "zhou",
+        "27": "hulkenberg",
+        "31": "ocon",
+        "44": "hamilton",
+        "55": "sainz",
+        "63": "russell",
+        "77": "bottas",
+        "81": "piastri",
+    }
     FEATURE_COLUMNS = [
         "grid",
         "qualifying_position",
@@ -234,6 +256,134 @@ class F1ModelService:
         raise RuntimeError("No prediction found for driver in season/round")
 
     @staticmethod
+    def predict_session(session_key: int, persist: bool = False) -> Dict[str, Any]:
+        link = F1StorageService.get_session_race_link(session_key)
+        if not link:
+            raise RuntimeError("No F1 session-to-race link found for session")
+
+        season = int(link["season"])
+        round_number = int(link["round"])
+        pre_race_board = F1ModelService.predict_race(season, round_number)
+        feature_snapshots = F1StorageService.list_feature_snapshots(
+            session_key=session_key,
+            subject_type="driver",
+            limit=250,
+        )
+        if not feature_snapshots:
+            raise RuntimeError("No race-weekend feature snapshots found for session")
+
+        race_results = [
+            row for row in F1StorageService.list_race_results(season, limit=1000)
+            if int(row.get("round") or 0) == round_number
+        ]
+        driver_by_number = F1ModelService._driver_by_number(race_results)
+        pre_race_by_driver = {
+            row["driver_id"]: row
+            for row in pre_race_board["predictions"]
+        }
+
+        predictions = []
+        prediction_rows = []
+        model_ids = {
+            "points_finish": pre_race_board["models"]["points_finish"]["id"],
+            "podium_finish": pre_race_board["models"]["podium_finish"]["id"],
+        }
+        now = datetime.now(timezone.utc).isoformat()
+
+        for snapshot in feature_snapshots:
+            features = snapshot.get("features") or {}
+            driver_number = str(features.get("driver_number") or snapshot.get("subject_key") or "")
+            driver_id = driver_by_number.get(driver_number)
+            if not driver_id or driver_id not in pre_race_by_driver:
+                continue
+
+            base = pre_race_by_driver[driver_id]
+            points_probability = F1ModelService._race_weekend_overlay(
+                base["points_finish_probability"],
+                outcome_type="points_finish",
+                features=features,
+            )
+            podium_probability = F1ModelService._race_weekend_overlay(
+                base["podium_finish_probability"],
+                outcome_type="podium_finish",
+                features=features,
+            )
+            confidence = F1ModelService._race_weekend_confidence(features)
+            explanation = {
+                "model_family": "pre_race_logistic_plus_race_weekend_overlay_v1",
+                "base_points_finish_probability": base["points_finish_probability"],
+                "base_podium_finish_probability": base["podium_finish_probability"],
+                "live_features": features,
+                "source_freshness": snapshot.get("source_freshness") or {},
+            }
+            prediction = {
+                "session_key": session_key,
+                "season": season,
+                "round": round_number,
+                "race_name": link.get("race_name"),
+                "driver_id": driver_id,
+                "driver_number": driver_number,
+                "driver_code": base.get("driver_code"),
+                "constructor_id": base.get("constructor_id"),
+                "constructor_name": base.get("constructor_name"),
+                "latest_position": features.get("latest_position"),
+                "latest_lap_number": features.get("latest_lap_number"),
+                "points_finish_probability": points_probability,
+                "podium_finish_probability": podium_probability,
+                "confidence": confidence,
+                "feature_snapshot_id": snapshot.get("id"),
+                "features": features,
+            }
+            predictions.append(prediction)
+
+            for outcome_type, probability in [
+                ("points_finish", points_probability),
+                ("podium_finish", podium_probability),
+            ]:
+                prediction_rows.append({
+                    "model_version_id": model_ids[outcome_type],
+                    "feature_snapshot_id": snapshot.get("id"),
+                    "outcome_type": outcome_type,
+                    "subject": driver_id,
+                    "probability": probability,
+                    "confidence": confidence,
+                    "prediction_mode": "race_weekend",
+                    "explanation": {
+                        **explanation,
+                        "outcome_type": outcome_type,
+                        "probability": probability,
+                    },
+                    "updated_at": now,
+                })
+
+        predictions.sort(key=lambda row: F1ModelService._sort_live_position(row))
+        persisted_rows = []
+        if persist:
+            feature_snapshot_ids = [
+                snapshot["id"]
+                for snapshot in feature_snapshots
+                if snapshot.get("id")
+            ]
+            F1StorageService.delete_model_predictions_for_feature_snapshots(
+                feature_snapshot_ids,
+                prediction_mode="race_weekend",
+            )
+            persisted_rows = F1StorageService.upsert_model_predictions(prediction_rows)
+        return {
+            "session_key": session_key,
+            "season": season,
+            "round": round_number,
+            "race_name": link.get("race_name"),
+            "session_name": link.get("session_name"),
+            "session_type": link.get("session_type"),
+            "prediction_mode": "race_weekend",
+            "feature_set": "race_weekend_v1",
+            "models": pre_race_board["models"],
+            "persisted_predictions": len(persisted_rows),
+            "predictions": predictions,
+        }
+
+    @staticmethod
     def _upsert_model_version(payload: Dict[str, Any]) -> Dict[str, Any]:
         response = (
             get_supabase()
@@ -312,6 +462,88 @@ class F1ModelService:
         except (TypeError, ValueError):
             grid_value = 99
         return grid_value, str(row.get("driver_id") or "")
+
+    @staticmethod
+    def _sort_live_position(row: Dict[str, Any]) -> tuple[int, str]:
+        try:
+            position = int(row.get("latest_position"))
+        except (TypeError, ValueError):
+            position = 99
+        return position, str(row.get("driver_id") or "")
+
+    @staticmethod
+    def _driver_by_number(race_results: List[Dict[str, Any]]) -> Dict[str, str]:
+        mapping = {
+            number: driver_id
+            for number, driver_id in F1ModelService.DRIVER_ID_BY_CAR_NUMBER.items()
+            if any(row.get("driver_id") == driver_id for row in race_results)
+        }
+        for row in race_results:
+            driver_number = row.get("driver_number")
+            driver_id = row.get("driver_id")
+            if driver_number is None or not driver_id:
+                continue
+            mapping.setdefault(str(driver_number), driver_id)
+        return mapping
+
+    @staticmethod
+    def _race_weekend_overlay(base_probability: float, outcome_type: str, features: Dict[str, Any]) -> float:
+        probability = float(base_probability)
+        latest_position = F1ModelService._safe_int(features.get("latest_position"))
+        latest_lap_number = F1ModelService._safe_int(features.get("latest_lap_number")) or 0
+        yellow_flags = F1ModelService._safe_int(features.get("yellow_flags_for_driver")) or 0
+        red_flags = F1ModelService._safe_int(features.get("red_flags_for_driver")) or 0
+        rainfall = F1ModelService._safe_float(features.get("latest_rainfall")) or 0.0
+
+        if latest_position is not None:
+            if outcome_type == "points_finish":
+                if latest_position <= 10:
+                    probability += min((11 - latest_position) * 0.025, 0.18)
+                else:
+                    probability -= min((latest_position - 10) * 0.025, 0.22)
+            elif outcome_type == "podium_finish":
+                if latest_position <= 3:
+                    probability += min((4 - latest_position) * 0.07, 0.20)
+                else:
+                    probability -= min((latest_position - 3) * 0.035, 0.30)
+
+        if latest_lap_number >= 10:
+            probability += 0.02 if latest_position is not None and latest_position <= 10 else -0.01
+        if yellow_flags or red_flags:
+            probability -= min((yellow_flags * 0.015) + (red_flags * 0.06), 0.12)
+        if rainfall > 0:
+            probability -= 0.015
+
+        return round(min(max(probability, 0.01), 0.99), 8)
+
+    @staticmethod
+    def _race_weekend_confidence(features: Dict[str, Any]) -> float:
+        lap_count = F1ModelService._safe_int(features.get("lap_count")) or 0
+        position_samples = F1ModelService._safe_int(features.get("position_samples")) or 0
+        confidence = 0.52
+        confidence += min(lap_count / 60, 0.22)
+        confidence += min(position_samples / 300, 0.18)
+        if features.get("latest_position") is not None:
+            confidence += 0.04
+        return round(min(confidence, 0.9), 4)
+
+    @staticmethod
+    def _safe_int(value: Any) -> int | None:
+        if value is None or value == "":
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _feature_vector(row: Dict[str, Any]) -> List[float]:
