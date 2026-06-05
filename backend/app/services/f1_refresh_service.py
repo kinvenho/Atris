@@ -59,6 +59,13 @@ class F1RefreshService:
                         lap_limit=settings.F1_DRIVER_SNAPSHOT_LIMIT,
                     ),
                 )
+                F1RefreshService._run_step(
+                    steps,
+                    f"build_session_feature_snapshots:{session_key}",
+                    lambda session_key=session_key: F1StorageService.build_session_feature_snapshots(
+                        session_key=session_key,
+                    ),
+                )
 
         if include_results:
             F1RefreshService._run_step(

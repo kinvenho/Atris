@@ -318,10 +318,15 @@ create table if not exists public.f1_feature_snapshots (
     id uuid primary key default gen_random_uuid(),
     market_id uuid references public.markets(id) on delete cascade,
     session_key integer references public.f1_sessions(session_key) on delete set null,
+    subject_type text not null default 'session' check (subject_type in ('session', 'driver', 'constructor')),
+    subject_key text not null default 'session',
+    snapshot_mode text not null default 'race_weekend' check (snapshot_mode in ('pre_race', 'race_weekend', 'live_race')),
     feature_set text not null,
     features jsonb not null,
     source_freshness jsonb not null default '{}'::jsonb,
-    created_at timestamptz not null default now()
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (session_key, subject_type, subject_key, feature_set)
 );
 
 create table if not exists public.f1_model_versions (
@@ -439,6 +444,9 @@ create index if not exists f1_feature_snapshots_market_created_idx
 
 create index if not exists f1_feature_snapshots_session_key_idx
     on public.f1_feature_snapshots (session_key);
+
+create index if not exists f1_feature_snapshots_subject_idx
+    on public.f1_feature_snapshots (subject_type, subject_key, created_at desc);
 
 create index if not exists f1_model_predictions_market_created_idx
     on public.f1_model_predictions (market_id, created_at desc);

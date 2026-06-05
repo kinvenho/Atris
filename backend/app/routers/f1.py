@@ -215,6 +215,20 @@ async def ingest_f1_driver_session_snapshots(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/features/sessions/{session_key}/snapshots/build", response_model=Dict[str, Any])
+async def build_f1_session_feature_snapshots(
+    session_key: int,
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        return F1StorageService.build_session_feature_snapshots(session_key)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/sessions", response_model=List[F1Session])
 async def get_f1_sessions(
     year: int | None = Query(default=None, ge=2023),
@@ -271,6 +285,23 @@ async def get_stored_f1_driver_session_snapshots(
 ):
     try:
         return F1StorageService.list_driver_session_snapshots(session_key, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/features/sessions/{session_key}/snapshots", response_model=List[Dict[str, Any]])
+async def get_f1_session_feature_snapshots(
+    session_key: int,
+    subject_type: str | None = Query(default=None),
+    subject_key: str | None = Query(default=None),
+    limit: int = Query(default=250, ge=1, le=500),
+):
+    try:
+        if subject_type and subject_type not in {"session", "driver", "constructor"}:
+            raise HTTPException(status_code=400, detail="subject_type must be session, driver, or constructor")
+        return F1StorageService.list_feature_snapshots(session_key, subject_type, subject_key, limit)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

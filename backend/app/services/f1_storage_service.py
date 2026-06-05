@@ -397,6 +397,44 @@ class F1StorageService:
             raise
 
     @staticmethod
+    def build_session_feature_snapshots(session_key: int) -> Dict[str, Any]:
+        run_id = F1StorageService._start_ingestion_run(
+            source_name="Atris",
+            ingestion_type="session_feature_snapshots",
+            metadata={"session_key": session_key, "feature_set": "race_weekend_v1"},
+        )
+        try:
+            events = F1StorageService.list_session_events(session_key=session_key, limit=1000)
+            driver_snapshots = F1StorageService.list_driver_session_snapshots(session_key=session_key, limit=250)
+            rows = F1StorageService._build_session_feature_snapshots(session_key, events, driver_snapshots)
+            if rows:
+                get_supabase().table("f1_feature_snapshots").upsert(
+                    rows,
+                    on_conflict="session_key,subject_type,subject_key,feature_set",
+                ).execute()
+            F1StorageService._finish_ingestion_run(
+                run_id=run_id,
+                status="success",
+                records_processed=len(rows),
+            )
+            return {
+                "status": "success",
+                "source": "Atris",
+                "session_key": session_key,
+                "records_processed": len(rows),
+                "ingestion_run_id": run_id,
+            }
+        except Exception as e:
+            logger.error("F1 session feature snapshot build failed: %s", e)
+            F1StorageService._finish_ingestion_run(
+                run_id=run_id,
+                status="failed",
+                records_processed=0,
+                errors=[str(e)],
+            )
+            raise
+
+    @staticmethod
     def list_races(season: int, limit: int = 50) -> List[Dict[str, Any]]:
         response = (
             get_supabase()
@@ -452,6 +490,28 @@ class F1StorageService:
             .limit(limit)
             .execute()
         )
+        return response.data or []
+
+    @staticmethod
+    def list_feature_snapshots(
+        session_key: int,
+        subject_type: str | None = None,
+        subject_key: str | None = None,
+        limit: int = 250,
+    ) -> List[Dict[str, Any]]:
+        query = (
+            get_supabase()
+            .table("f1_feature_snapshots")
+            .select("*")
+            .eq("session_key", session_key)
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+        if subject_type:
+            query = query.eq("subject_type", subject_type)
+        if subject_key:
+            query = query.eq("subject_key", subject_key)
+        response = query.execute()
         return response.data or []
 
     @staticmethod
@@ -739,6 +799,118 @@ class F1StorageService:
             "_latest_position_payload": None,
             "_latest_lap_payload": None,
         }
+
+    @staticmethod
+    def _build_session_feature_snapshots(
+        session_key: int,
+        events: List[Dict[str, Any]],
+        driver_snapshots: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        weather_events = [event for event in events if event.get("event_type") == "weather"]
+        race_control_events = [event for event in events if event.get("event_type") == "race_control"]
+        weather_summary = F1StorageService._weather_summary(weather_events)
+        race_control_summary = F1StorageService._race_control_summary(race_control_events)
+        driver_event_counts = F1StorageService._driver_event_counts(race_control_events)
+        latest_event_time = F1StorageService._latest_event_time(events)
+        fetched_at = datetime.now(timezone.utc).isoformat()
+
+        rows: List[Dict[str, Any]] = []
+        for snapshot in driver_snapshots:
+            driver_number = snapshot.get("driver_number")
+            if driver_number is None:
+                continue
+            driver_key = str(driver_number)
+            metrics = snapshot.get("metrics") or {}
+            event_counts = driver_event_counts.get(driver_key, {})
+            features = {
+                "driver_number": F1StorageService._parse_int(driver_number),
+                "latest_position": snapshot.get("latest_position"),
+                "latest_lap_number": snapshot.get("latest_lap_number"),
+                "fastest_lap_duration": F1StorageService._parse_float(snapshot.get("fastest_lap_duration")),
+                "lap_count": snapshot.get("lap_count") or 0,
+                "position_samples": snapshot.get("position_samples") or 0,
+                "latest_lap_duration": F1StorageService._parse_float(metrics.get("latest_lap_duration")),
+                "sector_1": F1StorageService._parse_float(metrics.get("duration_sector_1")),
+                "sector_2": F1StorageService._parse_float(metrics.get("duration_sector_2")),
+                "sector_3": F1StorageService._parse_float(metrics.get("duration_sector_3")),
+                "speed_trap": F1StorageService._parse_float(metrics.get("st_speed")),
+                "race_control_events_for_driver": event_counts.get("total", 0),
+                "yellow_flags_for_driver": event_counts.get("yellow", 0),
+                "red_flags_for_driver": event_counts.get("red", 0),
+                "session_race_control_events": race_control_summary["total_events"],
+                "session_yellow_flags": race_control_summary["yellow_flags"],
+                "session_red_flags": race_control_summary["red_flags"],
+                "session_safety_car_events": race_control_summary["safety_car_events"],
+                "latest_air_temperature": weather_summary.get("latest_air_temperature"),
+                "latest_track_temperature": weather_summary.get("latest_track_temperature"),
+                "latest_rainfall": weather_summary.get("latest_rainfall"),
+                "avg_air_temperature": weather_summary.get("avg_air_temperature"),
+                "avg_track_temperature": weather_summary.get("avg_track_temperature"),
+                "rain_samples": weather_summary.get("rain_samples"),
+            }
+            rows.append({
+                "session_key": session_key,
+                "subject_type": "driver",
+                "subject_key": driver_key,
+                "snapshot_mode": "race_weekend",
+                "feature_set": "race_weekend_v1",
+                "features": features,
+                "source_freshness": {
+                    "latest_event_time": latest_event_time,
+                    "driver_snapshot_fetched_at": snapshot.get("fetched_at"),
+                    "built_at": fetched_at,
+                },
+                "updated_at": fetched_at,
+            })
+
+        return rows
+
+    @staticmethod
+    def _weather_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+        values = [event.get("value") or {} for event in events]
+        latest = values[0] if values else {}
+        air_values = [F1StorageService._parse_float(value.get("air_temperature")) for value in values]
+        track_values = [F1StorageService._parse_float(value.get("track_temperature")) for value in values]
+        rain_values = [F1StorageService._parse_float(value.get("rainfall")) for value in values]
+        return {
+            "latest_air_temperature": F1StorageService._parse_float(latest.get("air_temperature")),
+            "latest_track_temperature": F1StorageService._parse_float(latest.get("track_temperature")),
+            "latest_rainfall": F1StorageService._parse_float(latest.get("rainfall")),
+            "avg_air_temperature": F1StorageService._average([value for value in air_values if value is not None]),
+            "avg_track_temperature": F1StorageService._average([value for value in track_values if value is not None]),
+            "rain_samples": len([value for value in rain_values if value and value > 0]),
+        }
+
+    @staticmethod
+    def _race_control_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+        flags = [str(event.get("flag") or "").upper() for event in events]
+        messages = [str(event.get("message") or "").lower() for event in events]
+        return {
+            "total_events": len(events),
+            "yellow_flags": len([flag for flag in flags if "YELLOW" in flag]),
+            "red_flags": len([flag for flag in flags if "RED" in flag]),
+            "safety_car_events": len([message for message in messages if "safety car" in message or "vsc" in message]),
+        }
+
+    @staticmethod
+    def _driver_event_counts(events: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+        counts: Dict[str, Dict[str, int]] = {}
+        for event in events:
+            driver_number = event.get("driver_number")
+            if driver_number is None:
+                continue
+            driver_key = str(driver_number)
+            driver_counts = counts.setdefault(driver_key, {"total": 0, "yellow": 0, "red": 0})
+            flag = str(event.get("flag") or "").upper()
+            driver_counts["total"] += 1
+            driver_counts["yellow"] += 1 if "YELLOW" in flag else 0
+            driver_counts["red"] += 1 if "RED" in flag else 0
+        return counts
+
+    @staticmethod
+    def _latest_event_time(events: List[Dict[str, Any]]) -> str | None:
+        event_times = [event.get("event_time") for event in events if event.get("event_time")]
+        return max(event_times) if event_times else None
 
     @staticmethod
     def _build_driver_features(
@@ -1036,6 +1208,12 @@ class F1StorageService:
         if count <= 0:
             return None
         return round(float(total) / count, 4)
+
+    @staticmethod
+    def _average(values: List[float]) -> float | None:
+        if not values:
+            return None
+        return round(sum(values) / len(values), 4)
 
     @staticmethod
     def _event_key(event_type: str, session_key: int, row: Dict[str, Any]) -> str:
