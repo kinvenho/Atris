@@ -1,7 +1,7 @@
-import logging
 import hashlib
 import json
-from datetime import datetime, timezone
+import logging
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List
 
 from app.models.f1 import F1DataSource, F1Race, F1Session
@@ -435,6 +435,44 @@ class F1StorageService:
             raise
 
     @staticmethod
+    def build_session_race_links(season: int) -> Dict[str, Any]:
+        run_id = F1StorageService._start_ingestion_run(
+            source_name="Atris",
+            ingestion_type="session_race_links",
+            metadata={"season": season},
+        )
+        try:
+            sessions = F1StorageService.list_sessions(season, limit=500)
+            races = F1StorageService.list_races(season, limit=50)
+            rows = F1StorageService._build_session_race_links(season, sessions, races)
+            if rows:
+                get_supabase().table("f1_session_race_links").upsert(
+                    rows,
+                    on_conflict="session_key",
+                ).execute()
+            F1StorageService._finish_ingestion_run(
+                run_id=run_id,
+                status="success",
+                records_processed=len(rows),
+            )
+            return {
+                "status": "success",
+                "source": "Atris",
+                "season": season,
+                "records_processed": len(rows),
+                "ingestion_run_id": run_id,
+            }
+        except Exception as e:
+            logger.error("F1 session race link build failed: %s", e)
+            F1StorageService._finish_ingestion_run(
+                run_id=run_id,
+                status="failed",
+                records_processed=0,
+                errors=[str(e)],
+            )
+            raise
+
+    @staticmethod
     def list_races(season: int, limit: int = 50) -> List[Dict[str, Any]]:
         response = (
             get_supabase()
@@ -512,6 +550,20 @@ class F1StorageService:
         if subject_key:
             query = query.eq("subject_key", subject_key)
         response = query.execute()
+        return response.data or []
+
+    @staticmethod
+    def list_session_race_links(season: int, limit: int = 500) -> List[Dict[str, Any]]:
+        response = (
+            get_supabase()
+            .table("f1_session_race_links")
+            .select("*")
+            .eq("season", season)
+            .order("round")
+            .order("session_key")
+            .limit(limit)
+            .execute()
+        )
         return response.data or []
 
     @staticmethod
@@ -866,6 +918,111 @@ class F1StorageService:
         return rows
 
     @staticmethod
+    def _build_session_race_links(
+        season: int,
+        sessions: List[Dict[str, Any]],
+        races: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        for session in sessions:
+            session_key = session.get("session_key")
+            session_start = F1StorageService._parse_datetime_value(session.get("date_start"))
+            if session_key is None or session_start is None:
+                continue
+
+            scored_races = [
+                F1StorageService._score_session_race_match(session, race, session_start.date())
+                for race in races
+            ]
+            scored_races = [match for match in scored_races if match["confidence"] >= 0.55]
+            if not scored_races:
+                continue
+
+            best_match = max(scored_races, key=lambda match: match["confidence"])
+            race = best_match["race"]
+            rows.append({
+                "session_key": session_key,
+                "season": season,
+                "round": race.get("round"),
+                "race_name": race.get("race_name"),
+                "session_name": session.get("session_name"),
+                "session_type": session.get("session_type"),
+                "confidence": best_match["confidence"],
+                "match_reason": best_match["match_reason"],
+                "metadata": {
+                    "session_country_name": session.get("country_name"),
+                    "session_location": session.get("location"),
+                    "session_circuit_short_name": session.get("circuit_short_name"),
+                    "session_date_start": session.get("date_start"),
+                    "race_country": race.get("country"),
+                    "race_locality": race.get("locality"),
+                    "race_circuit_name": race.get("circuit_name"),
+                    "race_date": race.get("race_date"),
+                    "date_delta_days": best_match["date_delta_days"],
+                },
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+        return rows
+
+    @staticmethod
+    def _score_session_race_match(
+        session: Dict[str, Any],
+        race: Dict[str, Any],
+        session_date: date,
+    ) -> Dict[str, Any]:
+        race_date = F1StorageService._parse_date_value(race.get("race_date"))
+        if race_date is None:
+            return {
+                "race": race,
+                "confidence": 0.0,
+                "match_reason": "missing_race_date",
+                "date_delta_days": None,
+            }
+
+        date_delta_days = abs((race_date - session_date).days)
+        if date_delta_days <= 3:
+            date_score = 0.55
+        elif date_delta_days <= 6:
+            date_score = 0.35
+        else:
+            date_score = 0.0
+
+        session_country = F1StorageService._normalize_text(session.get("country_name"))
+        race_country = F1StorageService._normalize_text(race.get("country"))
+        country_score = 0.25 if session_country and race_country and session_country == race_country else 0.0
+
+        location_text = " ".join([
+            F1StorageService._normalize_text(session.get("location")),
+            F1StorageService._normalize_text(session.get("circuit_short_name")),
+        ]).strip()
+        race_text = " ".join([
+            F1StorageService._normalize_text(race.get("locality")),
+            F1StorageService._normalize_text(race.get("circuit_name")),
+        ]).strip()
+        text_score = 0.0
+        if location_text and race_text:
+            location_tokens = {token for token in location_text.split() if len(token) >= 4}
+            race_tokens = {token for token in race_text.split() if len(token) >= 4}
+            if location_tokens.intersection(race_tokens):
+                text_score = 0.15
+
+        confidence = min(round(date_score + country_score + text_score, 4), 1.0)
+        reason_parts = []
+        if date_score:
+            reason_parts.append(f"date_delta={date_delta_days}")
+        if country_score:
+            reason_parts.append("country")
+        if text_score:
+            reason_parts.append("location_text")
+        return {
+            "race": race,
+            "confidence": confidence,
+            "match_reason": ",".join(reason_parts) or "low_confidence",
+            "date_delta_days": date_delta_days,
+        }
+
+    @staticmethod
     def _weather_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         values = [event.get("value") or {} for event in events]
         latest = values[0] if values else {}
@@ -911,6 +1068,10 @@ class F1StorageService:
     def _latest_event_time(events: List[Dict[str, Any]]) -> str | None:
         event_times = [event.get("event_time") for event in events if event.get("event_time")]
         return max(event_times) if event_times else None
+
+    @staticmethod
+    def _normalize_text(value: Any) -> str:
+        return str(value or "").strip().lower().replace("-", " ")
 
     @staticmethod
     def _build_driver_features(
@@ -1242,6 +1403,28 @@ class F1StorageService:
         clean_value = str(value).replace("Z", "+00:00")
         try:
             return datetime.fromisoformat(clean_value).isoformat()
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _parse_datetime_value(value: Any) -> datetime | None:
+        if not value:
+            return None
+        clean_value = str(value).replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(clean_value)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _parse_date_value(value: Any) -> date | None:
+        if not value:
+            return None
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        clean_value = str(value).split("T")[0].split(" ")[0]
+        try:
+            return date.fromisoformat(clean_value)
         except ValueError:
             return None
 

@@ -171,6 +171,24 @@ create table if not exists public.f1_driver_session_snapshots (
     unique (session_key, driver_number)
 );
 
+create table if not exists public.f1_session_race_links (
+    id uuid primary key default gen_random_uuid(),
+    session_key integer not null references public.f1_sessions(session_key) on delete cascade,
+    season integer not null,
+    round integer not null,
+    race_name text,
+    session_name text,
+    session_type text,
+    confidence numeric not null default 0 check (confidence >= 0 and confidence <= 1),
+    match_reason text not null,
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (session_key),
+    unique (season, round, session_key),
+    foreign key (season, round) references public.f1_races(season, round) on delete cascade
+);
+
 create table if not exists public.f1_race_results (
     id uuid primary key default gen_random_uuid(),
     season integer not null,
@@ -409,6 +427,12 @@ create index if not exists f1_session_events_type_idx
 create index if not exists f1_driver_session_snapshots_session_position_idx
     on public.f1_driver_session_snapshots (session_key, latest_position);
 
+create index if not exists f1_session_race_links_race_idx
+    on public.f1_session_race_links (season, round);
+
+create index if not exists f1_session_race_links_session_type_idx
+    on public.f1_session_race_links (session_type, confidence desc);
+
 create index if not exists f1_race_results_season_round_idx
     on public.f1_race_results (season, round, position_order);
 
@@ -480,6 +504,7 @@ alter table public.f1_races enable row level security;
 alter table public.f1_sessions enable row level security;
 alter table public.f1_session_events enable row level security;
 alter table public.f1_driver_session_snapshots enable row level security;
+alter table public.f1_session_race_links enable row level security;
 alter table public.f1_race_results enable row level security;
 alter table public.f1_qualifying_results enable row level security;
 alter table public.f1_driver_season_features enable row level security;

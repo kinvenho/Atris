@@ -36,6 +36,11 @@ class F1RefreshService:
                 limit=session_limit or settings.F1_REFRESH_SESSION_LIMIT,
             ),
         )
+        F1RefreshService._run_step(
+            steps,
+            "build_session_race_links",
+            lambda: F1StorageService.build_session_race_links(normalized_season),
+        )
 
         if refresh_live_sessions:
             for session_key in F1RefreshService._recent_session_keys(

@@ -262,6 +262,31 @@ async def get_stored_f1_sessions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/sessions/seasons/{season}/race-links/build", response_model=Dict[str, Any])
+async def build_f1_session_race_links(
+    season: int,
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        return F1StorageService.build_session_race_links(season)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/sessions/seasons/{season}/race-links", response_model=List[Dict[str, Any]])
+async def get_f1_session_race_links(
+    season: int,
+    limit: int = Query(default=500, ge=1, le=1000),
+):
+    try:
+        return F1StorageService.list_session_race_links(season, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/stored/sessions/{session_key}/events", response_model=List[Dict[str, Any]])
 async def get_stored_f1_session_events(
     session_key: int,
