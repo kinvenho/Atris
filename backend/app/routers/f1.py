@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, HTTPException, Query
 
 from app.models.f1 import F1DataSource, F1LiveReadiness, F1Race, F1SeasonSchedule, F1Session
 from app.config import settings
+from app.services.f1_dashboard_service import F1DashboardService
 from app.services.f1_model_service import F1ModelService
 from app.services.f1_refresh_service import F1RefreshService
 from app.services.f1_service import F1Service
@@ -117,6 +118,24 @@ async def get_stored_f1_races(
 ):
     try:
         return F1StorageService.list_races(season, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/dashboard/seasons/{season}/rounds/{round_number}", response_model=Dict[str, Any])
+async def get_f1_dashboard_payload(
+    season: int,
+    round_number: int,
+    include_events: bool = Query(default=True),
+    event_limit: int = Query(default=50, ge=0, le=250),
+):
+    try:
+        return F1DashboardService.race_payload(
+            season=season,
+            round_number=round_number,
+            include_events=include_events,
+            event_limit=event_limit,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

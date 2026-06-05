@@ -378,6 +378,7 @@ class F1ModelService:
             "session_type": link.get("session_type"),
             "prediction_mode": "race_weekend",
             "feature_set": "race_weekend_v1",
+            "generated_at": now,
             "models": pre_race_board["models"],
             "persisted_predictions": len(persisted_rows),
             "predictions": predictions,

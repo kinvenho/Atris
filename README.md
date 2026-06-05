@@ -154,6 +154,7 @@ GET  /agent/runs
 POST /agent/trigger
 GET  /f1/sources
 GET  /f1/live-readiness
+GET  /f1/dashboard/seasons/{season}/rounds/{round}
 GET  /f1/stored/seasons/{season}/races
 GET  /f1/sessions/seasons/{season}/race-links
 GET  /f1/stored/sessions/{session_key}/events
@@ -296,7 +297,7 @@ scoring    0 0 * * *
 f1-refresh 0 */6 * * *
 ```
 
-The F1 refresh process is idempotent. It refreshes sources, schedule, OpenF1 sessions, session-to-race links, compact recent session events, driver session snapshots, race-weekend feature snapshots, race-weekend prediction snapshots, race results, qualifying results, feature rows, and model training examples. Model retraining is opt-in with `F1_REFRESH_RETRAIN_MODELS=true` or the `retrain_models=true` query parameter on `POST /f1/refresh`.
+The F1 refresh process is idempotent. It refreshes sources, schedule, OpenF1 sessions, session-to-race links, compact recent session events, driver session snapshots, race-weekend feature snapshots, race-weekend prediction snapshots, race results, qualifying results, feature rows, and model training examples. `GET /f1/dashboard/seasons/{season}/rounds/{round}` packages the race, linked sessions, predictions, events, snapshots, and freshness into one UI-ready payload. Model retraining is opt-in with `F1_REFRESH_RETRAIN_MODELS=true` or the `retrain_models=true` query parameter on `POST /f1/refresh`.
 
 ## Security Notes
 
