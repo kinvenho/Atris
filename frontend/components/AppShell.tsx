@@ -9,6 +9,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <span>ATRIS</span>
         </Link>
         <nav className="nav" aria-label="Primary navigation">
+          <Link href="/f1">F1</Link>
           <Link href="/">Feed</Link>
           <Link href="/performance">Performance</Link>
           <a href="https://polymarket.com" target="_blank" rel="noreferrer">

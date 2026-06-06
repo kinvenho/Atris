@@ -391,6 +391,313 @@ select {
   color: var(--red);
 }
 
+.f1-page {
+  min-height: calc(100vh - 5rem);
+  background:
+    linear-gradient(135deg, rgba(255, 24, 1, 0.13) 0 18%, transparent 18% 100%),
+    radial-gradient(circle at 72% 8%, rgba(255, 155, 40, 0.12), transparent 28rem),
+    #090910;
+  color: #f7f7fb;
+  padding: clamp(1rem, 2.5vw, 2rem) clamp(1rem, 3vw, 2.5rem) 3rem;
+}
+
+.f1-hero {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  padding: clamp(1.5rem, 3vw, 3rem) 0 clamp(1.2rem, 2vw, 2rem);
+}
+
+.f1-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  color: #c9c9d2;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.f1-context span {
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  padding-left: 0.75rem;
+}
+
+.f1-context .f1-pill {
+  border: 1px solid rgba(255, 24, 1, 0.65);
+  background: #ff1801;
+  padding: 0.4rem 0.7rem;
+  color: #fff;
+}
+
+.f1-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.28fr);
+  gap: 2rem;
+  align-items: end;
+  margin-top: 1.6rem;
+}
+
+.f1-title {
+  max-width: 62rem;
+  font-size: clamp(3rem, 7vw, 7rem);
+  font-weight: 900;
+  line-height: 0.86;
+  text-transform: uppercase;
+}
+
+.f1-subtitle {
+  margin-top: 1rem;
+  color: #c9c9d2;
+  font-family: "JetBrains Mono", monospace;
+  font-size: clamp(0.85rem, 1.2vw, 1rem);
+  text-transform: uppercase;
+}
+
+.f1-race-clock,
+.f1-main-panel,
+.f1-side-panel,
+.f1-panel {
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(12, 12, 18, 0.94);
+}
+
+.f1-race-clock {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.f1-race-clock span,
+.f1-race-clock small,
+.f1-kicker,
+.f1-count,
+.f1-table th,
+.f1-session-row span,
+.f1-session-row small,
+.f1-event-row span,
+.f1-mini-grid span {
+  color: #a8a8b3;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.f1-race-clock strong {
+  color: #fff;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 1.2rem;
+}
+
+.f1-command-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 0.33fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.f1-main-panel,
+.f1-side-panel,
+.f1-panel {
+  overflow: hidden;
+}
+
+.f1-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 1rem;
+}
+
+.f1-panel-header h2,
+.f1-side-panel h3 {
+  margin-top: 0.25rem;
+  font-size: clamp(1.2rem, 2vw, 2rem);
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.f1-panel-header.compact {
+  align-items: center;
+}
+
+.f1-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(39, 244, 210, 0.35);
+  padding: 0.45rem 0.65rem;
+  color: #27f4d2;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.f1-live-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  background: #27f4d2;
+}
+
+.f1-table-wrap {
+  overflow-x: auto;
+}
+
+.f1-table {
+  width: 100%;
+  min-width: 52rem;
+  border-collapse: collapse;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.f1-table th,
+.f1-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1.05rem 1rem;
+  text-align: left;
+}
+
+.f1-table td {
+  color: #fff;
+  font-weight: 800;
+}
+
+.f1-table tbody tr:hover {
+  background: rgba(255, 24, 1, 0.08);
+}
+
+.f1-rank {
+  color: #ff1801;
+  font-size: 1.1rem;
+}
+
+.f1-driver {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.f1-driver span {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.f1-positive {
+  color: #27f4d2 !important;
+}
+
+.f1-negative {
+  color: #ffb000 !important;
+}
+
+.f1-side-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.f1-side-panel {
+  padding: 1rem;
+}
+
+.f1-driver-code {
+  margin-top: 0.75rem;
+  color: #ff1801;
+  font-family: "JetBrains Mono", monospace;
+  font-size: clamp(3rem, 6vw, 5rem);
+  font-weight: 900;
+  line-height: 0.9;
+}
+
+.f1-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 1rem;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.f1-mini-grid div {
+  display: grid;
+  gap: 0.35rem;
+  background: #12121a;
+  padding: 0.9rem;
+}
+
+.f1-mini-grid strong {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 1.35rem;
+}
+
+.f1-track-panel {
+  padding: 0;
+}
+
+.f1-track-panel svg {
+  display: block;
+  width: 100%;
+  min-height: 14rem;
+  background: #050506;
+}
+
+.track-shadow {
+  fill: none;
+  stroke: rgba(255, 128, 0, 0.18);
+  stroke-width: 28;
+}
+
+.track-line {
+  fill: none;
+  stroke: #ff7a1a;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+  stroke-width: 12;
+}
+
+.f1-track-panel circle {
+  fill: #fff;
+  stroke: #ff1801;
+  stroke-width: 4;
+}
+
+.f1-lower-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.58fr) minmax(0, 0.42fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.f1-session-list,
+.f1-event-list {
+  display: grid;
+}
+
+.f1-session-row,
+.f1-event-row {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1rem;
+}
+
+.f1-event-row {
+  grid-template-columns: 10rem minmax(0, 1fr);
+}
+
+.f1-session-row strong,
+.f1-event-row strong {
+  font-size: 1.05rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -485,7 +792,10 @@ select {
 
 @media (max-width: 980px) {
   .hero,
-  .detail-grid {
+  .detail-grid,
+  .f1-hero-grid,
+  .f1-command-grid,
+  .f1-lower-grid {
     grid-template-columns: 1fr;
   }
 
@@ -526,5 +836,19 @@ select {
 
   .table-panel {
     overflow-x: auto;
+  }
+
+  .f1-title {
+    font-size: 3rem;
+  }
+
+  .f1-page {
+    padding-inline: 0.75rem;
+  }
+
+  .f1-session-row,
+  .f1-event-row {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
   }
 }

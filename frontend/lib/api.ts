@@ -48,11 +48,11 @@ export type AgentRun = {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-async function getJson<T>(path: string, fallback: T): Promise<T> {
+async function getJson<T>(path: string, fallback: T, timeoutMs = 8000): Promise<T> {
   try {
     const response = await fetch(`${API_URL}${path}`, {
       next: { revalidate: 60 },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {
@@ -107,4 +107,76 @@ export function getPerformance() {
 
 export function getAgentRuns() {
   return getJson<AgentRun[]>("/agent/runs", []);
+}
+
+export type F1Prediction = {
+  driver_id: string;
+  driver_code?: string | null;
+  driver_number?: string | null;
+  constructor_id?: string | null;
+  constructor_name?: string | null;
+  grid?: number | string | null;
+  qualifying_position?: number | string | null;
+  latest_position?: number | string | null;
+  latest_lap_number?: number | string | null;
+  points_finish_probability: number;
+  podium_finish_probability: number;
+  confidence?: number | null;
+  features?: Record<string, unknown>;
+};
+
+export type F1PredictionBoard = {
+  prediction_mode?: string;
+  feature_set?: string;
+  generated_at?: string | null;
+  predictions: F1Prediction[];
+  models?: Record<string, unknown>;
+};
+
+export type F1DashboardSession = {
+  session_key: number;
+  link?: {
+    session_name?: string | null;
+    session_type?: string | null;
+    date_start?: string | null;
+    race_name?: string | null;
+  };
+  events?: Array<Record<string, unknown>>;
+  driver_snapshots?: Array<Record<string, unknown>>;
+  feature_snapshots?: Array<Record<string, unknown>>;
+  predictions?: F1PredictionBoard | null;
+  freshness?: Record<string, unknown>;
+};
+
+export type F1DashboardPayload = {
+  season: number;
+  round: number;
+  race?: {
+    race_name?: string | null;
+    circuit_name?: string | null;
+    locality?: string | null;
+    country?: string | null;
+    race_date?: string | null;
+    race_time?: string | null;
+  } | null;
+  sessions: F1DashboardSession[];
+  pre_race_predictions?: F1PredictionBoard | null;
+  latest_race_weekend_predictions?: F1PredictionBoard | null;
+  freshness?: {
+    built_at?: string | null;
+    linked_sessions?: number;
+    pre_race_prediction_count?: number;
+    race_weekend_prediction_count?: number;
+    latest_event_time?: string | null;
+    latest_feature_snapshot_at?: string | null;
+    latest_prediction_built_at?: string | null;
+  };
+};
+
+export function getF1Dashboard(season: number, round: number) {
+  return getJson<F1DashboardPayload | null>(
+    `/f1/dashboard/seasons/${season}/rounds/${round}?event_limit=80`,
+    null,
+    2500,
+  );
 }

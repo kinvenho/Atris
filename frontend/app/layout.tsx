@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Atris",
-  description: "Autonomous Polymarket research and recommendation agent.",
+  description: "Atris is an AI prediction analyst for Formula 1 race intelligence.",
 };
 
 export default function RootLayout({
