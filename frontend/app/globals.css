@@ -403,6 +403,11 @@ select {
   padding: clamp(1.5rem, 3vw, 3rem) 0 clamp(1.2rem, 2vw, 2rem);
 }
 
+.f1-compact-hero {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  padding: clamp(1.5rem, 3vw, 2.5rem) 0;
+}
+
 .f1-context {
   display: flex;
   flex-wrap: wrap;
@@ -441,6 +446,10 @@ select {
   font-weight: 900;
   line-height: 0.86;
   text-transform: uppercase;
+}
+
+.f1-title.compact {
+  font-size: clamp(2.8rem, 5vw, 5rem);
 }
 
 .f1-subtitle {
@@ -695,6 +704,44 @@ select {
   text-transform: uppercase;
 }
 
+.f1-race-list {
+  display: grid;
+}
+
+.f1-race-row {
+  display: grid;
+  grid-template-columns: 5rem minmax(14rem, 1.2fr) minmax(14rem, 1fr) minmax(12rem, 0.8fr) 9rem;
+  gap: 1rem;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1.1rem 1rem;
+  color: #f7f7fb;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.f1-race-row:hover {
+  background: rgba(255, 24, 1, 0.08);
+}
+
+.f1-race-row strong {
+  font-family: "Barlow", Arial, Helvetica, sans-serif;
+  font-size: 1.2rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.f1-race-row span {
+  color: #a8a8b3;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.f1-race-row .f1-race-round {
+  color: #ff1801;
+  font-size: 1rem;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -844,7 +891,8 @@ select {
   }
 
   .f1-session-row,
-  .f1-event-row {
+  .f1-event-row,
+  .f1-race-row {
     grid-template-columns: 1fr;
     gap: 0.35rem;
   }

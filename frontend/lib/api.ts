@@ -173,10 +173,26 @@ export type F1DashboardPayload = {
   };
 };
 
+export type F1RaceSummary = {
+  season?: number;
+  round?: number | string | null;
+  race_name?: string | null;
+  circuit_name?: string | null;
+  locality?: string | null;
+  country?: string | null;
+  race_date?: string | null;
+  race_time?: string | null;
+  updated_at?: string | null;
+};
+
 export function getF1Dashboard(season: number, round: number) {
   return getJson<F1DashboardPayload | null>(
     `/f1/dashboard/seasons/${season}/rounds/${round}?event_limit=80`,
     null,
     2500,
   );
+}
+
+export function getF1StoredRaces(season: number) {
+  return getJson<F1RaceSummary[]>(`/f1/stored/seasons/${season}/races?limit=100`, [], 2500);
 }

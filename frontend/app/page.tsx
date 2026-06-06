@@ -1,1 +1,5 @@
-export { default } from "./f1/page";
+import F1CommandCenter from "@/components/F1CommandCenter";
+
+export default function Home() {
+  return <F1CommandCenter />;
+}

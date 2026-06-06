@@ -10,6 +10,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
         <nav className="nav" aria-label="Primary navigation">
           <Link href="/">Command</Link>
+          <Link href="/f1/races">Races</Link>
         </nav>
       </header>
       {children}
