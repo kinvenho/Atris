@@ -393,10 +393,7 @@ select {
 
 .f1-page {
   min-height: calc(100vh - 5rem);
-  background:
-    linear-gradient(135deg, rgba(255, 24, 1, 0.13) 0 18%, transparent 18% 100%),
-    radial-gradient(circle at 72% 8%, rgba(255, 155, 40, 0.12), transparent 28rem),
-    #090910;
+  background: #090910;
   color: #f7f7fb;
   padding: clamp(1rem, 2.5vw, 2rem) clamp(1rem, 3vw, 2.5rem) 3rem;
 }
