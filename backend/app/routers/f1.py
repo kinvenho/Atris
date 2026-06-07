@@ -33,6 +33,14 @@ async def get_live_readiness():
     return F1Service.get_live_readiness()
 
 
+@router.get("/data/coverage", response_model=List[Dict[str, Any]])
+async def get_f1_data_coverage():
+    try:
+        return F1StorageService.list_data_coverage()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/refresh", response_model=Dict[str, Any])
 async def refresh_f1_data(
     season: str = Query(default="current"),

@@ -703,6 +703,56 @@ class F1StorageService:
         return response.data or []
 
     @staticmethod
+    def list_data_coverage() -> List[Dict[str, Any]]:
+        coverage_tables = {
+            "races": "f1_races",
+            "race_results": "f1_race_results",
+            "qualifying_results": "f1_qualifying_results",
+            "driver_features": "f1_driver_season_features",
+            "constructor_features": "f1_constructor_season_features",
+            "training_examples": "f1_model_training_examples",
+            "backtest_predictions": "f1_model_backtest_predictions",
+        }
+        seasons = sorted(F1StorageService._season_counts("f1_races").keys(), reverse=True)
+        coverage: List[Dict[str, Any]] = []
+
+        for season in seasons:
+            row = {"season": season}
+            for key, table_name in coverage_tables.items():
+                row[key] = F1StorageService._count_rows_for_season(table_name, season)
+            coverage.append(row)
+
+        return coverage
+
+    @staticmethod
+    def _count_rows_for_season(table_name: str, season: int) -> int:
+        response = (
+            get_supabase()
+            .table(table_name)
+            .select("season", count="exact")
+            .eq("season", season)
+            .limit(1)
+            .execute()
+        )
+        return int(response.count or 0)
+
+    @staticmethod
+    def _season_counts(table_name: str, limit: int = 1000) -> Dict[int, int]:
+        response = (
+            get_supabase()
+            .table(table_name)
+            .select("season")
+            .limit(limit)
+            .execute()
+        )
+        counts: Dict[int, int] = {}
+        for row in response.data or []:
+            season = F1StorageService._parse_int(row.get("season"))
+            if season is not None:
+                counts[season] = counts.get(season, 0) + 1
+        return counts
+
+    @staticmethod
     def _start_ingestion_run(source_name: str, ingestion_type: str, metadata: Dict[str, Any]) -> str:
         response = (
             get_supabase()
