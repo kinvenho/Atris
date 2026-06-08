@@ -110,6 +110,9 @@ export function getAgentRuns() {
 }
 
 export type F1Prediction = {
+  session_key?: number | string | null;
+  feature_snapshot_id?: string | null;
+  outcome_type?: string | null;
   driver_id: string;
   driver_code?: string | null;
   driver_number?: string | null;

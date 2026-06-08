@@ -474,17 +474,20 @@ class F1ModelService:
 
     @staticmethod
     def _driver_by_number(race_results: List[Dict[str, Any]]) -> Dict[str, str]:
-        mapping = {
-            number: driver_id
-            for number, driver_id in F1ModelService.DRIVER_ID_BY_CAR_NUMBER.items()
-            if any(row.get("driver_id") == driver_id for row in race_results)
-        }
+        mapping: Dict[str, str] = {}
         for row in race_results:
             driver_number = row.get("driver_number")
             driver_id = row.get("driver_id")
             if driver_number is None or not driver_id:
                 continue
             mapping.setdefault(str(driver_number), driver_id)
+        if mapping:
+            return mapping
+        mapping = {
+            number: driver_id
+            for number, driver_id in F1ModelService.DRIVER_ID_BY_CAR_NUMBER.items()
+            if any(row.get("driver_id") == driver_id for row in race_results)
+        }
         return mapping
 
     @staticmethod

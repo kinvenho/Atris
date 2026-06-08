@@ -246,6 +246,35 @@ function latestTelemetryRows(rows: Array<{
   return [...byDriver.values()].sort((a, b) => Number(a.snapshot.latest_position ?? 99) - Number(b.snapshot.latest_position ?? 99));
 }
 
+function predictionRowKey(prediction: F1Prediction, index: number) {
+  return [
+    prediction.session_key ?? "pre",
+    prediction.driver_number ?? prediction.driver_id,
+    prediction.feature_snapshot_id ?? prediction.outcome_type ?? index,
+    index,
+  ].join("-");
+}
+
+function raceResultRowKey(result: F1RaceResult, index: number) {
+  return [
+    result.season ?? "season",
+    result.round ?? "round",
+    result.driver_number ?? result.driver_id,
+    result.position_order ?? result.position ?? index,
+    index,
+  ].join("-");
+}
+
+function qualifyingResultRowKey(result: F1QualifyingResult, index: number) {
+  return [
+    result.season ?? "season",
+    result.round ?? "round",
+    result.driver_id,
+    result.qualifying_position ?? index,
+    index,
+  ].join("-");
+}
+
 type F1CommandCenterProps = {
   season?: number;
   round?: number;
@@ -545,7 +574,7 @@ export default async function F1CommandCenter({ season: requestedSeason, round: 
                     const delta = probabilityDelta(prediction, preRaceByDriver.get(prediction.driver_id));
                     const color = TEAM_COLORS[prediction.constructor_id ?? ""] ?? "#ff2d2d";
                     return (
-                      <tr key={prediction.driver_id}>
+                      <tr key={predictionRowKey(prediction, index)}>
                         <td className="f1-rank">{prediction.latest_position ?? index + 1}</td>
                         <td>
                           <span className="f1-driver">
@@ -583,11 +612,11 @@ export default async function F1CommandCenter({ season: requestedSeason, round: 
                   </tr>
                 </thead>
                 <tbody>
-                  {raceResults.map((result) => {
+                  {raceResults.map((result, index) => {
                     const qualifying = qualifyingByDriver.get(result.driver_id);
                     const gain = positionGain(result.grid, result.position_order ?? result.position);
                     return (
-                      <tr key={result.driver_id}>
+                      <tr key={raceResultRowKey(result, index)}>
                         <td className="f1-rank">{result.position_text ?? result.position ?? result.position_order ?? "-"}</td>
                         <td>
                           <strong>{resultDriverLabel(result)}</strong>
@@ -673,11 +702,11 @@ export default async function F1CommandCenter({ season: requestedSeason, round: 
                   <strong>Top {fieldStack.length}</strong>
                 </div>
                 <div className="f1-field-bars">
-                  {fieldStack.map((prediction) => {
+                  {fieldStack.map((prediction, index) => {
                     const color = TEAM_COLORS[prediction.constructor_id ?? ""] ?? "#ff2d2d";
                     const probability = Math.round(Number(prediction.points_finish_probability || 0) * 100);
                     return (
-                      <div key={prediction.driver_id} className="f1-field-bar-row">
+                      <div key={predictionRowKey(prediction, index)} className="f1-field-bar-row">
                         <div
                           className="f1-field-bar-fill"
                           aria-label={`${prediction.driver_code ?? prediction.driver_id} points probability ${probability}%`}
@@ -924,8 +953,8 @@ export default async function F1CommandCenter({ season: requestedSeason, round: 
                     </tr>
                   </thead>
                   <tbody>
-                    {qualifyingResults.map((result) => (
-                      <tr key={result.driver_id}>
+                    {qualifyingResults.map((result, index) => (
+                      <tr key={qualifyingResultRowKey(result, index)}>
                         <td className="f1-rank">{result.qualifying_position ?? "-"}</td>
                         <td>
                           <strong>{result.driver_code ?? driverName(result.driver_id)}</strong>
@@ -1057,13 +1086,13 @@ export default async function F1CommandCenter({ season: requestedSeason, round: 
             {raceResults.length ? (
               <>
                 <div className="f1-podium">
-                  {[podiumResults[1], podiumResults[0], podiumResults[2]].filter(Boolean).map((result) => {
+                  {[podiumResults[1], podiumResults[0], podiumResults[2]].filter(Boolean).map((result, index) => {
                     const finishPosition = Number(result.position_order ?? result.position ?? 0);
                     const constructorId = resultConstructorId(result);
                     const color = TEAM_COLORS[constructorId] ?? "#ff1801";
                     return (
                       <div
-                        key={result.driver_id}
+                        key={raceResultRowKey(result, index)}
                         className={`f1-podium-step position-${finishPosition}`}
                         style={{
                           backgroundColor: hexOpacity(color, "66"),
@@ -1093,11 +1122,11 @@ export default async function F1CommandCenter({ season: requestedSeason, round: 
                       </tr>
                     </thead>
                     <tbody>
-                      {raceResults.map((result) => {
+                      {raceResults.map((result, index) => {
                         const qualifying = qualifyingByDriver.get(result.driver_id);
                         const gain = positionGain(result.grid, result.position_order ?? result.position);
                         return (
-                          <tr key={result.driver_id}>
+                          <tr key={raceResultRowKey(result, index)}>
                             <td className="f1-rank">{result.position_text ?? result.position ?? result.position_order ?? "-"}</td>
                             <td>
                               <strong>{result.driver_code ?? driverName(result.driver_id)}</strong>
