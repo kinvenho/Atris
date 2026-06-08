@@ -1,5 +1,5 @@
-import F1CommandCenter from "@/components/F1CommandCenter";
+import { redirect } from "next/navigation";
 
 export default function F1Page() {
-  return <F1CommandCenter />;
+  redirect("/");
 }

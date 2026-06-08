@@ -1,24 +1,26 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
-import { F1RaceSummary, formatDate, getF1StoredRaces } from "@/lib/api";
-
-const FALLBACK_RACES: F1RaceSummary[] = [
-  { season: 2024, round: 1, race_name: "Bahrain Grand Prix", circuit_name: "Bahrain International Circuit", locality: "Sakhir", country: "Bahrain", race_date: "2024-03-02" },
-  { season: 2024, round: 2, race_name: "Saudi Arabian Grand Prix", circuit_name: "Jeddah Corniche Circuit", locality: "Jeddah", country: "Saudi Arabia", race_date: "2024-03-09" },
-  { season: 2024, round: 3, race_name: "Australian Grand Prix", circuit_name: "Albert Park Grand Prix Circuit", locality: "Melbourne", country: "Australia", race_date: "2024-03-24" },
-  { season: 2024, round: 4, race_name: "Japanese Grand Prix", circuit_name: "Suzuka Circuit", locality: "Suzuka", country: "Japan", race_date: "2024-04-07" },
-  { season: 2024, round: 5, race_name: "Chinese Grand Prix", circuit_name: "Shanghai International Circuit", locality: "Shanghai", country: "China", race_date: "2024-04-21" },
-  { season: 2024, round: 6, race_name: "Miami Grand Prix", circuit_name: "Miami International Autodrome", locality: "Miami", country: "United States", race_date: "2024-05-05" },
-];
+import { F1RaceSummary, formatDate, getF1DataCoverage, getF1StoredRaces } from "@/lib/api";
 
 function raceRound(race: F1RaceSummary) {
   return Number(race.round ?? 0);
 }
 
-export default async function F1RacesPage() {
-  const storedRaces = await getF1StoredRaces(2024);
-  const races = storedRaces.length ? storedRaces : FALLBACK_RACES;
-  const sortedRaces = [...races].sort((a, b) => raceRound(a) - raceRound(b));
+type F1RacesPageProps = {
+  searchParams: Promise<{
+    season?: string;
+  }>;
+};
+
+export default async function F1RacesPage({ searchParams }: F1RacesPageProps) {
+  const [{ season: seasonParam }, coverage] = await Promise.all([searchParams, getF1DataCoverage()]);
+  const seasons = coverage.map((row) => row.season);
+  const selectedSeason = Number(seasonParam || seasons[0] || 2024);
+  const season = seasons.includes(selectedSeason) ? selectedSeason : seasons[0] ?? selectedSeason;
+  const storedRaces = await getF1StoredRaces(season);
+  const sortedRaces = [...storedRaces]
+    .filter((race) => Number(race.season ?? season) === season)
+    .sort((a, b) => raceRound(a) - raceRound(b));
 
   return (
     <AppShell>
@@ -26,7 +28,7 @@ export default async function F1RacesPage() {
         <section className="f1-compact-hero">
           <div className="f1-context">
             <span className="f1-pill">Race Index</span>
-            <span>2024</span>
+            <span>{season}</span>
             <span>{sortedRaces.length} rounds</span>
           </div>
           <div className="f1-hero-grid">
@@ -37,28 +39,71 @@ export default async function F1RacesPage() {
           </div>
         </section>
 
-        <section className="f1-panel">
+        <nav className="f1-season-switcher" aria-label="Season selector">
+          {seasons.map((seasonOption) => (
+            <a
+              key={seasonOption}
+              href={`/f1/races?season=${seasonOption}`}
+              className={seasonOption === season ? "active" : ""}
+            >
+              {seasonOption}
+            </a>
+          ))}
+        </nav>
+
+        <section className="f1-main-panel">
           <div className="f1-panel-header">
             <div>
               <span className="f1-kicker">Season Schedule</span>
               <h2>Stored Race Layer</h2>
             </div>
-            <span className="f1-count">Command URLs</span>
+            <div className="f1-status">
+              <span className="f1-live-dot" />
+              Command URLs
+            </div>
           </div>
-          <div className="f1-race-list">
-            {sortedRaces.map((race) => {
-              const round = raceRound(race);
-              return (
-                <Link key={`${race.season ?? 2024}-${round}`} href={`/f1/races/${race.season ?? 2024}/${round}`} className="f1-race-row">
-                  <span className="f1-race-round">R{round}</span>
-                  <strong>{race.race_name ?? "Grand Prix"}</strong>
-                  <span>{race.circuit_name ?? "Circuit"}</span>
-                  <span>{race.locality ?? "-"} / {race.country ?? "-"}</span>
-                  <span>{formatDate(race.race_date)}</span>
-                </Link>
-              );
-            })}
+          {sortedRaces.length ? (
+          <div className="f1-table-wrap">
+            <table className="f1-table f1-race-command-table">
+              <thead>
+                <tr>
+                  <th>Rnd.</th>
+                  <th>Grand Prix</th>
+                  <th>Circuit</th>
+                  <th>Location</th>
+                  <th>Date</th>
+                  <th>Command</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedRaces.map((race) => {
+                  const round = raceRound(race);
+                  return (
+                    <tr key={`${race.season ?? season}-${round}`}>
+                      <td className="f1-race-round">R{round}</td>
+                      <td>
+                        <strong>{race.race_name ?? "Grand Prix"}</strong>
+                      </td>
+                      <td>{race.circuit_name ?? "Circuit"}</td>
+                      <td>{race.locality ?? "-"} / {race.country ?? "-"}</td>
+                      <td>{formatDate(race.race_date)}</td>
+                      <td>
+                        <Link href={`/f1/races/${race.season ?? season}/${round}`} className="f1-command-link">
+                          Open
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
+          ) : (
+            <div className="f1-empty-panel">
+              <span>Race Layer Empty</span>
+              <strong>No stored races are available from the API for {season} yet.</strong>
+            </div>
+          )}
         </section>
       </main>
     </AppShell>

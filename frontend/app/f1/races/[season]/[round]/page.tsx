@@ -5,9 +5,13 @@ type F1RaceCommandPageProps = {
     season: string;
     round: string;
   }>;
+  searchParams: Promise<{
+    tab?: string;
+  }>;
 };
 
-export default async function F1RaceCommandPage({ params }: F1RaceCommandPageProps) {
+export default async function F1RaceCommandPage({ params, searchParams }: F1RaceCommandPageProps) {
   const { season, round } = await params;
-  return <F1CommandCenter season={Number(season)} round={Number(round)} />;
+  const { tab } = await searchParams;
+  return <F1CommandCenter season={Number(season)} round={Number(round)} mode="race" activeTab={tab} />;
 }

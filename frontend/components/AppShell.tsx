@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AppNav from "@/components/AppNav";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -8,10 +9,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <span className="brand-mark">A</span>
           <span>ATRIS</span>
         </Link>
-        <nav className="nav" aria-label="Primary navigation">
-          <Link href="/">Command</Link>
-          <Link href="/f1/races">Races</Link>
-        </nav>
+        <AppNav />
       </header>
       {children}
     </div>

@@ -70,6 +70,31 @@ async def refresh_f1_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/refresh/current-weekend", response_model=Dict[str, Any])
+async def refresh_current_f1_weekend(
+    season: str = Query(default="current"),
+    include_results: bool = Query(default=True),
+    rebuild_features: bool = Query(default=True),
+    rebuild_training: bool = Query(default=True),
+    admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
+):
+    try:
+        require_admin_token(admin_token)
+        normalized_season: int | str = "current" if season == "current" else int(season)
+        return F1RefreshService.refresh_current_weekend(
+            season=normalized_season,
+            include_results=include_results,
+            rebuild_features=rebuild_features,
+            rebuild_training=rebuild_training,
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="season must be a year or 'current'")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/ingest/sources", response_model=List[Dict[str, Any]])
 async def ingest_f1_sources(
     admin_token: str | None = Header(default=None, alias="x-atris-admin-token"),
@@ -306,10 +331,11 @@ async def build_f1_session_race_links(
 @router.get("/sessions/seasons/{season}/race-links", response_model=List[Dict[str, Any]])
 async def get_f1_session_race_links(
     season: int,
+    round: int | None = Query(default=None, ge=1, le=99),
     limit: int = Query(default=500, ge=1, le=1000),
 ):
     try:
-        return F1StorageService.list_session_race_links(season, limit)
+        return F1StorageService.list_session_race_links(season, limit, round)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -441,10 +467,11 @@ async def build_f1_driver_season_features(
 @router.get("/stored/seasons/{season}/race-results", response_model=List[Dict[str, Any]])
 async def get_stored_f1_race_results(
     season: int,
+    round: int | None = Query(default=None, ge=1, le=99),
     limit: int = Query(default=1000, ge=1, le=1000),
 ):
     try:
-        return F1StorageService.list_race_results(season, limit)
+        return F1StorageService.list_race_results(season, limit, round)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -452,10 +479,29 @@ async def get_stored_f1_race_results(
 @router.get("/stored/seasons/{season}/qualifying-results", response_model=List[Dict[str, Any]])
 async def get_stored_f1_qualifying_results(
     season: int,
+    round: int | None = Query(default=None, ge=1, le=99),
     limit: int = Query(default=1000, ge=1, le=1000),
 ):
     try:
-        return F1StorageService.list_qualifying_results(season, limit)
+        return F1StorageService.list_qualifying_results(season, limit, round)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stored/seasons/{season}/rounds/{round_number}/workspace", response_model=Dict[str, Any])
+async def get_stored_f1_race_workspace(
+    season: int,
+    round_number: int,
+):
+    try:
+        return {
+            "season": season,
+            "round": round_number,
+            "race": F1StorageService.get_race(season, round_number),
+            "race_results": F1StorageService.list_race_results(season, 100, round_number),
+            "qualifying_results": F1StorageService.list_qualifying_results(season, 100, round_number),
+            "session_links": F1StorageService.list_session_race_links(season, 20, round_number),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

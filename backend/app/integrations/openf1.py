@@ -1,4 +1,5 @@
 from datetime import datetime
+from urllib.parse import quote
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -46,16 +47,46 @@ class OpenF1Client:
     def fetch_laps(self, session_key: int | str, limit: int = 1500) -> List[Dict[str, Any]]:
         return self._fetch_rows("laps", {"session_key": session_key}, limit)
 
-    def _fetch_rows(self, endpoint: str, params: Dict[str, Any], limit: int) -> List[Dict[str, Any]]:
-        url = f"{self.base_url}/{endpoint}"
+    def fetch_car_data(self, session_key: int | str, date_since: str | None = None, limit: int = 3000) -> List[Dict[str, Any]]:
+        return self._fetch_rows("car_data", {"session_key": session_key}, limit, date_since=date_since)
+
+    def fetch_intervals(self, session_key: int | str, date_since: str | None = None, limit: int = 3000) -> List[Dict[str, Any]]:
+        return self._fetch_rows("intervals", {"session_key": session_key}, limit, date_since=date_since)
+
+    def fetch_location(self, session_key: int | str, date_since: str | None = None, limit: int = 3000) -> List[Dict[str, Any]]:
+        return self._fetch_rows("location", {"session_key": session_key}, limit, date_since=date_since)
+
+    def fetch_pit(self, session_key: int | str, limit: int = 500) -> List[Dict[str, Any]]:
+        return self._fetch_rows("pit", {"session_key": session_key}, limit)
+
+    def fetch_stints(self, session_key: int | str, limit: int = 500) -> List[Dict[str, Any]]:
+        return self._fetch_rows("stints", {"session_key": session_key}, limit)
+
+    def _fetch_rows(
+        self,
+        endpoint: str,
+        params: Dict[str, Any],
+        limit: int,
+        date_since: str | None = None,
+    ) -> List[Dict[str, Any]]:
+        url = self._url(endpoint, params, date_since)
         with httpx.Client(timeout=settings.F1_HTTP_TIMEOUT_SECONDS) as client:
-            response = client.get(url, params=params)
+            response = client.get(url)
+            if response.status_code in {404, 422}:
+                return []
             response.raise_for_status()
 
         rows = response.json()
         if not isinstance(rows, list):
             return []
         return [row for row in rows if isinstance(row, dict)][:limit]
+
+    def _url(self, endpoint: str, params: Dict[str, Any], date_since: str | None = None) -> str:
+        query_parts = [f"{quote(str(key), safe='')}={quote(str(value), safe='')}" for key, value in params.items()]
+        if date_since:
+            query_parts.append(f"date>={quote(date_since, safe=':+')}")
+        query = "&".join(query_parts)
+        return f"{self.base_url}/{endpoint}?{query}" if query else f"{self.base_url}/{endpoint}"
 
     def _parse_session(self, item: Dict[str, Any]) -> Optional[F1Session]:
         try:

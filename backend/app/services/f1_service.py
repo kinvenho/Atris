@@ -139,3 +139,23 @@ class F1Service:
     @staticmethod
     def get_laps(session_key: int | str, limit: int = 1500) -> List[dict]:
         return OpenF1Client().fetch_laps(session_key=session_key, limit=limit)
+
+    @staticmethod
+    def get_car_data(session_key: int | str, date_since: str | None = None, limit: int = 3000) -> List[dict]:
+        return OpenF1Client().fetch_car_data(session_key=session_key, date_since=date_since, limit=limit)
+
+    @staticmethod
+    def get_intervals(session_key: int | str, date_since: str | None = None, limit: int = 3000) -> List[dict]:
+        return OpenF1Client().fetch_intervals(session_key=session_key, date_since=date_since, limit=limit)
+
+    @staticmethod
+    def get_location(session_key: int | str, date_since: str | None = None, limit: int = 3000) -> List[dict]:
+        return OpenF1Client().fetch_location(session_key=session_key, date_since=date_since, limit=limit)
+
+    @staticmethod
+    def get_pit(session_key: int | str, limit: int = 500) -> List[dict]:
+        return OpenF1Client().fetch_pit(session_key=session_key, limit=limit)
+
+    @staticmethod
+    def get_stints(session_key: int | str, limit: int = 500) -> List[dict]:
+        return OpenF1Client().fetch_stints(session_key=session_key, limit=limit)

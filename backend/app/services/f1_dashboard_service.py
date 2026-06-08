@@ -14,10 +14,11 @@ class F1DashboardService:
         event_limit: int = 50,
     ) -> Dict[str, Any]:
         race = F1DashboardService._race(season, round_number)
-        session_links = [
-            link for link in F1StorageService.list_session_race_links(season, limit=1000)
-            if int(link.get("round") or 0) == round_number
-        ]
+        session_links = F1StorageService.list_session_race_links(
+            season,
+            limit=100,
+            round_number=round_number,
+        )
         sessions = [
             F1DashboardService._session_payload(
                 link,
@@ -41,10 +42,7 @@ class F1DashboardService:
 
     @staticmethod
     def _race(season: int, round_number: int) -> Dict[str, Any] | None:
-        for race in F1StorageService.list_races(season, limit=100):
-            if int(race.get("round") or 0) == round_number:
-                return race
-        return None
+        return F1StorageService.get_race(season, round_number)
 
     @staticmethod
     def _session_payload(

@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from app.models.f1 import F1DataSource, F1Race, F1Session
@@ -107,6 +107,43 @@ class F1StorageService:
             raise
 
     @staticmethod
+    def derive_races_from_sessions(season: int) -> Dict[str, Any]:
+        run_id = F1StorageService._start_ingestion_run(
+            source_name="OpenF1",
+            ingestion_type="schedule_from_sessions",
+            metadata={"season": season},
+        )
+        try:
+            sessions = F1StorageService.list_sessions(season, limit=1000)
+            rows = F1StorageService._race_rows_from_sessions(season, sessions)
+            if rows:
+                get_supabase().table("f1_races").upsert(
+                    rows,
+                    on_conflict="season,round",
+                ).execute()
+            F1StorageService._finish_ingestion_run(
+                run_id=run_id,
+                status="success",
+                records_processed=len(rows),
+            )
+            return {
+                "status": "success",
+                "source": "OpenF1",
+                "season": season,
+                "records_processed": len(rows),
+                "ingestion_run_id": run_id,
+            }
+        except Exception as e:
+            logger.error("F1 OpenF1 schedule derivation failed: %s", e)
+            F1StorageService._finish_ingestion_run(
+                run_id=run_id,
+                status="failed",
+                records_processed=0,
+                errors=[str(e)],
+            )
+            raise
+
+    @staticmethod
     def ingest_session_events(
         session_key: int,
         include_race_control: bool = True,
@@ -182,7 +219,22 @@ class F1StorageService:
         try:
             positions = F1Service.get_position(session_key=session_key, limit=position_limit)
             laps = F1Service.get_laps(session_key=session_key, limit=lap_limit)
-            rows = F1StorageService._driver_snapshot_rows(session_key, positions, laps)
+            date_since = F1StorageService._telemetry_window_start(positions, laps)
+            car_data = F1Service.get_car_data(session_key=session_key, date_since=date_since, limit=3000)
+            intervals = F1Service.get_intervals(session_key=session_key, date_since=date_since, limit=3000)
+            locations = F1Service.get_location(session_key=session_key, date_since=date_since, limit=3000)
+            pit_rows = F1Service.get_pit(session_key=session_key, limit=500)
+            stint_rows = F1Service.get_stints(session_key=session_key, limit=500)
+            rows = F1StorageService._driver_snapshot_rows(
+                session_key,
+                positions,
+                laps,
+                car_data=car_data,
+                intervals=intervals,
+                locations=locations,
+                pit_rows=pit_rows,
+                stint_rows=stint_rows,
+            )
             if rows:
                 get_supabase().table("f1_driver_session_snapshots").upsert(
                     rows,
@@ -486,6 +538,21 @@ class F1StorageService:
         return response.data or []
 
     @staticmethod
+    def get_race(season: int, round_number: int) -> Dict[str, Any] | None:
+        response = (
+            get_supabase()
+            .table("f1_races")
+            .select("*")
+            .eq("season", season)
+            .eq("round", round_number)
+            .limit(1)
+            .execute()
+        )
+        if not response.data:
+            return None
+        return response.data[0]
+
+    @staticmethod
     def list_sessions(year: int, limit: int = 100) -> List[Dict[str, Any]]:
         response = (
             get_supabase()
@@ -553,8 +620,8 @@ class F1StorageService:
         return response.data or []
 
     @staticmethod
-    def list_session_race_links(season: int, limit: int = 500) -> List[Dict[str, Any]]:
-        response = (
+    def list_session_race_links(season: int, limit: int = 500, round_number: int | None = None) -> List[Dict[str, Any]]:
+        query = (
             get_supabase()
             .table("f1_session_race_links")
             .select("*")
@@ -562,8 +629,10 @@ class F1StorageService:
             .order("round")
             .order("session_key")
             .limit(limit)
-            .execute()
         )
+        if round_number is not None:
+            query = query.eq("round", round_number)
+        response = query.execute()
         return response.data or []
 
     @staticmethod
@@ -630,8 +699,8 @@ class F1StorageService:
         return response.data or []
 
     @staticmethod
-    def list_race_results(season: int, limit: int = 1000) -> List[Dict[str, Any]]:
-        response = (
+    def list_race_results(season: int, limit: int = 1000, round_number: int | None = None) -> List[Dict[str, Any]]:
+        query = (
             get_supabase()
             .table("f1_race_results")
             .select("*")
@@ -639,13 +708,15 @@ class F1StorageService:
             .order("round")
             .order("position_order")
             .limit(limit)
-            .execute()
         )
+        if round_number is not None:
+            query = query.eq("round", round_number)
+        response = query.execute()
         return response.data or []
 
     @staticmethod
-    def list_qualifying_results(season: int, limit: int = 1000) -> List[Dict[str, Any]]:
-        response = (
+    def list_qualifying_results(season: int, limit: int = 1000, round_number: int | None = None) -> List[Dict[str, Any]]:
+        query = (
             get_supabase()
             .table("f1_qualifying_results")
             .select("*")
@@ -653,8 +724,10 @@ class F1StorageService:
             .order("round")
             .order("qualifying_position")
             .limit(limit)
-            .execute()
         )
+        if round_number is not None:
+            query = query.eq("round", round_number)
+        response = query.execute()
         return response.data or []
 
     @staticmethod
@@ -814,6 +887,75 @@ class F1StorageService:
         }
 
     @staticmethod
+    def _race_rows_from_sessions(season: int, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        by_meeting: Dict[int, List[Dict[str, Any]]] = {}
+        for session in sessions:
+            meeting_key = F1StorageService._parse_int(session.get("meeting_key"))
+            date_start = F1StorageService._parse_datetime_value(session.get("date_start"))
+            if meeting_key is None or date_start is None:
+                continue
+            by_meeting.setdefault(meeting_key, []).append(session)
+
+        meetings = sorted(
+            by_meeting.items(),
+            key=lambda item: min(
+                F1StorageService._parse_datetime_value(session.get("date_start")) or datetime.max.replace(tzinfo=timezone.utc)
+                for session in item[1]
+            ),
+        )
+
+        rows: List[Dict[str, Any]] = []
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        for index, (meeting_key, meeting_sessions) in enumerate(meetings, start=1):
+            meeting_sessions = sorted(
+                meeting_sessions,
+                key=lambda session: F1StorageService._parse_datetime_value(session.get("date_start")) or datetime.max.replace(tzinfo=timezone.utc),
+            )
+            race_session = next(
+                (
+                    session for session in meeting_sessions
+                    if str(session.get("session_type") or "").lower() == "race"
+                    or str(session.get("session_name") or "").lower() == "race"
+                ),
+                meeting_sessions[-1],
+            )
+            first_session = meeting_sessions[0]
+            race_start = F1StorageService._parse_datetime_value(race_session.get("date_start"))
+            source_payload = {
+                "meeting_key": meeting_key,
+                "sessions": [session.get("source_payload") or {} for session in meeting_sessions],
+                "derived_from": "OpenF1 sessions",
+            }
+            race_country = race_session.get("country_name") or first_session.get("country_name")
+            circuit_short_name = race_session.get("circuit_short_name") or first_session.get("circuit_short_name")
+            location = race_session.get("location") or first_session.get("location")
+            rows.append({
+                "season": season,
+                "round": index,
+                "race_name": F1StorageService._openf1_race_name(race_country),
+                "circuit_name": circuit_short_name or location or "Circuit pending",
+                "locality": location,
+                "country": race_country,
+                "race_date": race_start.date().isoformat() if race_start else None,
+                "race_time": race_start.time().isoformat().replace("+00:00", "Z") if race_start else None,
+                "source_name": "OpenF1",
+                "source_payload": source_payload,
+                "fetched_at": fetched_at,
+                "updated_at": fetched_at,
+            })
+
+        return rows
+
+    @staticmethod
+    def _openf1_race_name(country_name: Any) -> str:
+        country = str(country_name or "").strip()
+        if not country:
+            return "Grand Prix"
+        if country.lower() == "monaco":
+            return "Monaco Grand Prix"
+        return f"{country} Grand Prix"
+
+    @staticmethod
     def _session_to_row(session: F1Session) -> Dict[str, Any]:
         return {
             "session_key": session.session_key,
@@ -896,8 +1038,18 @@ class F1StorageService:
         session_key: int,
         positions: List[Dict[str, Any]],
         laps: List[Dict[str, Any]],
+        car_data: List[Dict[str, Any]] | None = None,
+        intervals: List[Dict[str, Any]] | None = None,
+        locations: List[Dict[str, Any]] | None = None,
+        pit_rows: List[Dict[str, Any]] | None = None,
+        stint_rows: List[Dict[str, Any]] | None = None,
     ) -> List[Dict[str, Any]]:
         by_driver: Dict[int, Dict[str, Any]] = {}
+        car_summary = F1StorageService._latest_by_driver(car_data or [], "date")
+        interval_summary = F1StorageService._latest_by_driver(intervals or [], "date")
+        location_summary = F1StorageService._latest_by_driver(locations or [], "date")
+        pit_summary = F1StorageService._pit_summary_by_driver(pit_rows or [])
+        stint_summary = F1StorageService._stint_summary_by_driver(stint_rows or [])
 
         for position in positions:
             driver_number = F1StorageService._parse_int(position.get("driver_number"))
@@ -927,9 +1079,15 @@ class F1StorageService:
 
         rows: List[Dict[str, Any]] = []
         for snapshot in by_driver.values():
+            driver_number = snapshot["driver_number"]
             latest_position_payload = snapshot.pop("_latest_position_payload") or {}
             latest_lap_payload = snapshot.pop("_latest_lap_payload") or {}
             latest_position_time = snapshot.pop("_latest_position_time")
+            latest_car_payload = car_summary.get(driver_number) or {}
+            latest_interval_payload = interval_summary.get(driver_number) or {}
+            latest_location_payload = location_summary.get(driver_number) or {}
+            driver_pit_summary = pit_summary.get(driver_number) or {}
+            driver_stint_summary = stint_summary.get(driver_number) or {}
             snapshot["metrics"] = {
                 "latest_position_at": latest_position_time,
                 "latest_lap_duration": latest_lap_payload.get("lap_duration"),
@@ -939,10 +1097,35 @@ class F1StorageService:
                 "i1_speed": latest_lap_payload.get("i1_speed"),
                 "i2_speed": latest_lap_payload.get("i2_speed"),
                 "st_speed": latest_lap_payload.get("st_speed"),
+                "latest_speed": latest_car_payload.get("speed"),
+                "latest_rpm": latest_car_payload.get("rpm"),
+                "latest_gear": latest_car_payload.get("n_gear"),
+                "latest_throttle": latest_car_payload.get("throttle"),
+                "latest_brake": latest_car_payload.get("brake"),
+                "latest_drs": latest_car_payload.get("drs"),
+                "gap_to_leader": latest_interval_payload.get("gap_to_leader"),
+                "interval": latest_interval_payload.get("interval"),
+                "location_x": latest_location_payload.get("x"),
+                "location_y": latest_location_payload.get("y"),
+                "location_z": latest_location_payload.get("z"),
+                "pit_stops": driver_pit_summary.get("pit_stops", 0),
+                "latest_pit_lap": driver_pit_summary.get("latest_pit_lap"),
+                "latest_pit_duration": driver_pit_summary.get("latest_pit_duration"),
+                "latest_lane_duration": driver_pit_summary.get("latest_lane_duration"),
+                "stint_number": driver_stint_summary.get("stint_number"),
+                "compound": driver_stint_summary.get("compound"),
+                "tyre_age_at_start": driver_stint_summary.get("tyre_age_at_start"),
+                "stint_lap_start": driver_stint_summary.get("lap_start"),
+                "stint_lap_end": driver_stint_summary.get("lap_end"),
             }
             snapshot["source_payload"] = {
                 "latest_position": latest_position_payload,
                 "latest_lap": latest_lap_payload,
+                "latest_car_data": latest_car_payload,
+                "latest_interval": latest_interval_payload,
+                "latest_location": latest_location_payload,
+                "pit_summary": driver_pit_summary,
+                "stint_summary": driver_stint_summary,
             }
             snapshot["fetched_at"] = datetime.now(timezone.utc).isoformat()
             snapshot["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -964,6 +1147,78 @@ class F1StorageService:
             "_latest_position_payload": None,
             "_latest_lap_payload": None,
         }
+
+    @staticmethod
+    def _telemetry_window_start(*row_groups: List[Dict[str, Any]]) -> str | None:
+        latest: datetime | None = None
+        for rows in row_groups:
+            for row in rows:
+                parsed = F1StorageService._parse_datetime_value(row.get("date"))
+                if parsed is None:
+                    continue
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                if latest is None or parsed > latest:
+                    latest = parsed
+        if latest is None:
+            return None
+        return (latest.astimezone(timezone.utc) - timedelta(minutes=8)).isoformat()
+
+    @staticmethod
+    def _latest_by_driver(rows: List[Dict[str, Any]], date_key: str) -> Dict[int, Dict[str, Any]]:
+        latest: Dict[int, Dict[str, Any]] = {}
+        latest_time: Dict[int, datetime] = {}
+        for row in rows:
+            driver_number = F1StorageService._parse_int(row.get("driver_number"))
+            event_time = F1StorageService._parse_datetime_value(row.get(date_key))
+            if driver_number is None or event_time is None:
+                continue
+            if event_time.tzinfo is None:
+                event_time = event_time.replace(tzinfo=timezone.utc)
+            if driver_number not in latest_time or event_time >= latest_time[driver_number]:
+                latest[driver_number] = row
+                latest_time[driver_number] = event_time
+        return latest
+
+    @staticmethod
+    def _pit_summary_by_driver(rows: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+        by_driver: Dict[int, Dict[str, Any]] = {}
+        for row in rows:
+            driver_number = F1StorageService._parse_int(row.get("driver_number"))
+            if driver_number is None:
+                continue
+            summary = by_driver.setdefault(driver_number, {"pit_stops": 0})
+            summary["pit_stops"] += 1
+            event_time = F1StorageService._parse_datetime_value(row.get("date"))
+            previous_time = F1StorageService._parse_datetime_value(summary.get("_latest_pit_at"))
+            if previous_time is None or (event_time is not None and event_time >= previous_time):
+                summary["_latest_pit_at"] = event_time.isoformat() if event_time else None
+                summary["latest_pit_lap"] = row.get("lap_number")
+                summary["latest_pit_duration"] = row.get("pit_duration") or row.get("stop_duration")
+                summary["latest_lane_duration"] = row.get("lane_duration")
+        for summary in by_driver.values():
+            summary.pop("_latest_pit_at", None)
+        return by_driver
+
+    @staticmethod
+    def _stint_summary_by_driver(rows: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+        by_driver: Dict[int, Dict[str, Any]] = {}
+        for row in rows:
+            driver_number = F1StorageService._parse_int(row.get("driver_number"))
+            stint_number = F1StorageService._parse_int(row.get("stint_number"))
+            if driver_number is None:
+                continue
+            current = by_driver.get(driver_number)
+            current_stint = F1StorageService._parse_int((current or {}).get("stint_number"))
+            if current is None or (stint_number is not None and (current_stint is None or stint_number >= current_stint)):
+                by_driver[driver_number] = {
+                    "stint_number": stint_number,
+                    "compound": row.get("compound"),
+                    "tyre_age_at_start": row.get("tyre_age_at_start"),
+                    "lap_start": row.get("lap_start"),
+                    "lap_end": row.get("lap_end"),
+                }
+        return by_driver
 
     @staticmethod
     def _build_session_feature_snapshots(
@@ -999,6 +1254,23 @@ class F1StorageService:
                 "sector_2": F1StorageService._parse_float(metrics.get("duration_sector_2")),
                 "sector_3": F1StorageService._parse_float(metrics.get("duration_sector_3")),
                 "speed_trap": F1StorageService._parse_float(metrics.get("st_speed")),
+                "latest_speed": F1StorageService._parse_float(metrics.get("latest_speed")),
+                "latest_rpm": F1StorageService._parse_float(metrics.get("latest_rpm")),
+                "latest_gear": F1StorageService._parse_int(metrics.get("latest_gear")),
+                "latest_throttle": F1StorageService._parse_float(metrics.get("latest_throttle")),
+                "latest_brake": F1StorageService._parse_float(metrics.get("latest_brake")),
+                "gap_to_leader": F1StorageService._parse_float(metrics.get("gap_to_leader")),
+                "interval": F1StorageService._parse_float(metrics.get("interval")),
+                "pit_stops": F1StorageService._parse_int(metrics.get("pit_stops")) or 0,
+                "latest_pit_lap": F1StorageService._parse_int(metrics.get("latest_pit_lap")),
+                "latest_pit_duration": F1StorageService._parse_float(metrics.get("latest_pit_duration")),
+                "compound": metrics.get("compound"),
+                "tyre_age_at_start": F1StorageService._parse_int(metrics.get("tyre_age_at_start")),
+                "stint_lap_start": F1StorageService._parse_int(metrics.get("stint_lap_start")),
+                "stint_lap_end": F1StorageService._parse_int(metrics.get("stint_lap_end")),
+                "location_x": F1StorageService._parse_float(metrics.get("location_x")),
+                "location_y": F1StorageService._parse_float(metrics.get("location_y")),
+                "location_z": F1StorageService._parse_float(metrics.get("location_z")),
                 "race_control_events_for_driver": event_counts.get("total", 0),
                 "yellow_flags_for_driver": event_counts.get("yellow", 0),
                 "red_flags_for_driver": event_counts.get("red", 0),
